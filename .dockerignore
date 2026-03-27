@@ -1,0 +1,48 @@
+# ============================================================
+# .dockerignore — Archivos que NO se copian al contenedor
+# ============================================================
+# Funciona como .gitignore pero para Docker.
+# Todo lo listado aquí se ignora en el COPY . .
+# Esto reduce el tamaño de la imagen y evita copiar secretos.
+
+# Entorno virtual (se instala fresco con pip install)
+venv/
+.venv/
+
+# Variables de entorno con secretos (NUNCA subir al contenedor)
+.env
+
+# Cache de Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.vscode/
+.idea/
+
+# Documentación (no necesaria en runtime)
+*.md
+docs/
+!docs/corporativos/
+
+# Credenciales locales (en Cloud Run se usa Workload Identity)
+credentials/
+
+# Archivos del agente (skills, comandos de Claude Code)
+.agent/
+.gemini/
+
+# Interfaz Streamlit (solo para desarrollo local)
+interface/
+
+# Tests (no son para producción)
+test_agent.py
+
+# Archivos de respaldo
+*.bak
+*.tmp

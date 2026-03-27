@@ -1,0 +1,40 @@
+# ================================
+# Entorno virtual
+# ================================
+venv/
+.venv/
+
+# ================================
+# Credenciales y secretos (NUNCA subir)
+# ================================
+.env
+credentials/*.json
+credentials/*.key
+
+# ================================
+# Cache de Python
+# ================================
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# ================================
+# Indice FAISS (se regenera con scripts/ingestar_documentos.py)
+# ================================
+vectorstore/
+
+# ================================
+# PDFs descargados (se regeneran desde Drive)
+# ================================
+docs/corporativos/POLITICAS/
+docs/corporativos/PROCEDIMIENTOS/
+docs/corporativos/REGLAMENTOS/
+docs/corporativos/OTROS/
+
+# ================================
+# Archivos de sistema
+# ================================
+.DS_Store
+Thumbs.db
+*.tmp
