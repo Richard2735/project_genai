@@ -25,7 +25,7 @@ Modos de operacion:
 
 import re
 from pathlib import Path
-from langchain.tools import tool
+from langchain_classic.tools import tool
 
 from config.settings import (
     GOOGLE_API_KEY,

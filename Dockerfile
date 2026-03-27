@@ -45,6 +45,7 @@ WORKDIR /app
 # El "rm -rf /var/lib/apt/lists/*" limpia la caché para reducir tamaño.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
+    swig \
     && rm -rf /var/lib/apt/lists/*
 
 # ------------------------------------------------------------

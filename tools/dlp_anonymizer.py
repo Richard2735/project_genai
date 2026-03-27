@@ -7,7 +7,7 @@ En desarrollo usa regex; en producción usa Google Cloud DLP API.
 """
 
 import re
-from langchain.tools import tool
+from langchain_classic.tools import tool
 
 
 @tool

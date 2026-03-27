@@ -1,7 +1,6 @@
 # Proyecto Integrador Módulo II - Agente Inteligente con LangChain
 
 # Core LangChain
-langchain==0.3.0
 langchain-classic==1.0.3
 langchain-google-genai==2.0.0
 langchain-google-vertexai>=2.0.0
@@ -26,9 +25,6 @@ google-auth-httplib2>=0.2.0
 
 # Google Cloud Platform — Vertex AI
 google-cloud-aiplatform>=1.60.0
-
-# Interfaz web
-streamlit==1.38.0
 
 # API REST (FastAPI + Uvicorn para Cloud Run)
 fastapi>=0.104.0

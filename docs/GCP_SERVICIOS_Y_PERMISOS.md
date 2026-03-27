@@ -339,9 +339,66 @@ gcloud builds submit \
 
 > El build tarda ~3-5 minutos. Puedes ver el progreso en **Cloud Build → History** en la consola GCP.
 
-**Desde la consola GCP (alternativa manual):**
+**Desde la consola GCP (alternativa manual — 1ra Generación):**
+
+> **¿1ra Gen vs 2da Gen?** Ambas funcionan para este proyecto. La 1ra Gen es más simple de configurar (conexión OAuth directa). La 2da Gen requiere pasar primero por **Cloud Build → Repositories**. Para desarrollo, usa 1ra Gen.
+
+#### Paso 1: Conectar el repositorio GitHub
+
 1. Ve a **Cloud Build → Triggers**
-2. Puedes crear un trigger conectado a tu repo Git, o hacer build manual subiendo tu código
+2. Click **"Connect Repository"**
+3. Selecciona **"GitHub (Cloud Build GitHub App)"**
+4. Autoriza la app de Cloud Build en GitHub
+5. Selecciona tu repositorio → **"Connect"**
+
+#### Paso 2: Crear el Trigger
+
+1. Click **"Create Trigger"**
+2. Completa los campos:
+
+| Campo | Valor |
+|-------|-------|
+| **Name** | `build-backend` |
+| **Region** | `us-central1` |
+| **Event** | ☑ Push to a branch |
+| **Branch** | `^main$` |
+| **Configuration** | ☑ Cloud Build configuration file (yaml or json) |
+| **Config file location** | `project_genai/cloudbuild.yaml` |
+| **Service account** | Reutilizar SA existente (ver nota abajo) |
+
+3. Todo lo demás se deja por **defecto** → Click **"Create"**
+
+> **Nota sobre Service Account en el Trigger:** Si ya tienes una SA con los roles `cloudbuild.builds.editor`, `artifactregistry.writer`, `logging.logWriter` y `storage.objectViewer`, puedes reutilizarla. Verifica sus roles con:
+
+```bash
+gcloud projects get-iam-policy project-d145b0df-76c9-4324-a6c \
+  --flatten="bindings[].members" \
+  --filter="bindings.members:TU_SA@project-d145b0df-76c9-4324-a6c.iam.gserviceaccount.com" \
+  --format="table(bindings.role)"
+```
+
+#### Paso 3: Crear `cloudbuild.yaml` en `project_genai/`
+
+Cloud Build necesita este archivo para saber qué construir:
+
+```yaml
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - 'us-central1-docker.pkg.dev/project-d145b0df-76c9-4324-a6c/agente-ia-repo/backend'
+      - '.'
+
+images:
+  - 'us-central1-docker.pkg.dev/project-d145b0df-76c9-4324-a6c/agente-ia-repo/backend'
+```
+
+#### Activar el build manualmente (sin esperar un push)
+
+1. Ve a **Cloud Build → Triggers**
+2. Busca tu trigger `build-backend`
+3. Click **"Run"** → selecciona la rama `main` → **"Run Trigger"**
 
 **Verificar que la imagen existe:**
 ```bash
@@ -567,3 +624,4 @@ gcloud run services update agente-ia-backend \
 | `artifacregistry` typo | Error de escritura en API name | `artifactregistry.googleapis.com` (con t) |
 | `429 RESOURCE_EXHAUSTED` embeddings | Cuota de Vertex AI para `textembedding-gecko` agotada | Solicitar aumento de cuota en GCP, o usar `USE_VERTEX_AI=false` (Google AI Studio gratis) |
 | API key expuesta en GitHub | Key hardcodeada en archivo versionado (commit) | Usar `<TU_API_KEY>` en docs. Almacenar keys reales en Secret Manager o `.env` (gitignored). Si se expone: rotar inmediatamente, limpiar historial con `git filter-repo`, y force push |
+| `Failed to trigger build: if 'build.service_account' is specified...` | Al usar SA personalizada en el trigger, Cloud Build exige configurar dónde guardar logs | Agregar `options: logging: CLOUD_LOGGING_ONLY` en `cloudbuild.yaml` |

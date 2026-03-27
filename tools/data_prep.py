@@ -8,7 +8,7 @@ duplicados) y estructura el output como pares instrucción-respuesta.
 
 import re
 import json
-from langchain.tools import tool
+from langchain_classic.tools import tool
 
 
 @tool
