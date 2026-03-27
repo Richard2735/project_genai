@@ -1,20 +1,19 @@
 # Proyecto Integrador Módulo II - Agente Inteligente con LangChain
 
-# Core LangChain
+# Core LangChain (versiones compatibles entre sí)
 langchain-classic==1.0.3
-langchain-google-genai==2.0.0
-langchain-google-vertexai>=2.0.0
-langchain-community>=0.3.0
+langchain-google-genai>=4.0.0
+langchain-google-vertexai>=3.0.0
+langchain-community>=0.4.0
 langchainhub>=0.1.21
 
 # Utilities
-python-dotenv==1.0.0
+python-dotenv>=1.0.0
 
 # Procesamiento de PDFs
 pypdf>=4.0.0
 
 # Vector Store — FAISS (búsqueda semántica local, sin servidor)
-# faiss-cpu es la versión sin GPU, ideal para desarrollo y Cloud Run
 faiss-cpu>=1.7.4
 
 # Google Drive API + Service Account (descarga de documentos corporativos)
@@ -29,7 +28,3 @@ google-cloud-aiplatform>=1.60.0
 # API REST (FastAPI + Uvicorn para Cloud Run)
 fastapi>=0.104.0
 uvicorn>=0.24.0
-
-# Opcional: Cloud DLP para producción
-# google-cloud-dlp==3.20.0
-
