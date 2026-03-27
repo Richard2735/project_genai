@@ -4,7 +4,8 @@
 
 Habilitar cada API desde **APIs & Services → Library** o con `gcloud`:
 
-#### Desde Cloud Shell / terminal:
+#### Desde Cloud Shell / terminal
+
 ```bash
 gcloud services enable \
   aiplatform.googleapis.com \
@@ -17,7 +18,8 @@ gcloud services enable \
   iam.googleapis.com
 ```
 
-#### Desde la consola GCP:
+#### Desde la consola GCP
+
 1. Ve a **APIs & Services → Library** (menú lateral)
 2. Busca cada API por nombre (ej: "Vertex AI API")
 3. Click en la API → **"Enable"**
@@ -85,9 +87,10 @@ gcloud services enable \
 | Vertex AI User | `roles/aiplatform.user` | ✅ |
 | Drive Viewer | *(permiso en Drive, no IAM)* | ✅ |
 
-#### Cómo se asignaron los roles:
+#### Cómo se asignaron los roles
 
 **Desde Cloud Shell / terminal:**
+
 ```bash
 SA_EMAIL=drive-reader-agemt@project-d145b0df-76c9-4324-a6c.iam.gserviceaccount.com
 
@@ -97,6 +100,7 @@ gcloud projects add-iam-policy-binding PROJECT_ID \
 ```
 
 **Desde la consola GCP:**
+
 1. Ve a **IAM & Admin → IAM**
 2. Busca `drive-reader-agemt@...` en la lista
 3. Click el **lápiz ✏️** (Edit)
@@ -104,6 +108,7 @@ gcloud projects add-iam-policy-binding PROJECT_ID \
 5. **Save**
 
 **Permiso en Drive:**
+
 1. Ve a **Google Drive** → abre la carpeta de PDFs
 2. Click **"Compartir"** → pega el email de la SA
 3. Asigna rol **"Viewer"** (solo lectura)
@@ -131,9 +136,10 @@ gcloud projects add-iam-policy-binding PROJECT_ID \
 
 > ⚠️ No olvides compartir la carpeta de Drive con `cloudrun-agent-sa@...` (Viewer) cuando despliegues.
 
-#### Cómo se creó y configuró:
+#### Cómo se creó y configuró
 
 **Desde Cloud Shell / terminal:**
+
 ```bash
 # Crear la SA
 gcloud iam service-accounts create cloudrun-agent-sa \
@@ -153,6 +159,7 @@ done
 ```
 
 **Desde la consola GCP:**
+
 1. Ve a **IAM & Admin → Service Accounts**
 2. Click **"+ Create Service Account"**
 3. Nombre: `cloudrun-agent-sa`, click **"Create and Continue"**
@@ -163,6 +170,7 @@ done
 5. Click **"Done"**
 
 **Permiso en Drive (pendiente para deploy):**
+
 1. Ve a **Google Drive** → carpeta de PDFs corporativos
 2. **Compartir** → pega `cloudrun-agent-sa@...iam.gserviceaccount.com`
 3. Rol: **Viewer** → Confirmar
@@ -188,9 +196,10 @@ done
 | Cloud Run Admin | `roles/run.admin` | ✅ |
 | Service Account User | `roles/iam.serviceAccountUser` | ✅ |
 
-#### Cómo se asignaron los roles:
+#### Cómo se asignaron los roles
 
 **Desde Cloud Shell / terminal:**
+
 ```bash
 # Obtener el Project Number
 PROJECT_NUMBER=$(gcloud projects describe PROJECT_ID --format="value(projectNumber)")
@@ -208,6 +217,7 @@ done
 ```
 
 **Desde la consola GCP:**
+
 1. Ve a **IAM & Admin → IAM**
 2. Marca el checkbox **"Include Google-provided role grants"** (arriba a la derecha)
 3. Busca la SA que termina en `@cloudbuild.gserviceaccount.com`
@@ -295,6 +305,7 @@ CMD ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8080"]
 ### 5. Crear repo en Artifact Registry — ✅ COMPLETADO
 
 **Desde Cloud Shell / terminal:**
+
 ```bash
 gcloud artifacts repositories create agente-ia-repo \
   --repository-format=docker \
@@ -303,6 +314,7 @@ gcloud artifacts repositories create agente-ia-repo \
 ```
 
 **Desde la consola GCP:**
+
 1. Ve a **Artifact Registry → Repositories**
 2. Click **"+ Create Repository"**
 3. Nombre: `agente-ia-repo`, Format: `Docker`, Region: `us-central1`
@@ -332,6 +344,7 @@ gcloud builds submit \
 ```
 
 **Qué hace este comando:**
+
 1. Empaqueta todo el directorio `project_genai/` (respetando `.dockerignore`)
 2. Lo sube a Cloud Build como un tarball
 3. Cloud Build ejecuta el `Dockerfile` paso a paso (instala Python, dependencias, copia código)
@@ -366,7 +379,7 @@ gcloud builds submit \
 | **Config file location** | `project_genai/cloudbuild.yaml` |
 | **Service account** | Reutilizar SA existente (ver nota abajo) |
 
-3. Todo lo demás se deja por **defecto** → Click **"Create"**
+1. Todo lo demás se deja por **defecto** → Click **"Create"**
 
 > **Nota sobre Service Account en el Trigger:** Si ya tienes una SA con los roles `cloudbuild.builds.editor`, `artifactregistry.writer`, `logging.logWriter` y `storage.objectViewer`, puedes reutilizarla. Verifica sus roles con:
 
@@ -401,6 +414,7 @@ images:
 3. Click **"Run"** → selecciona la rama `main` → **"Run Trigger"**
 
 **Verificar que la imagen existe:**
+
 ```bash
 gcloud artifacts docker images list \
   us-central1-docker.pkg.dev/project-d145b0df-76c9-4324-a6c/agente-ia-repo
@@ -427,17 +441,20 @@ echo -n "TU_NUEVA_API_KEY" | gcloud secrets create google-api-key \
 ```
 
 **Qué hace este comando:**
+
 1. Crea un secreto llamado `google-api-key` en Secret Manager
 2. El valor es tu API key de Google AI Studio
 3. `--replication-policy=automatic` replica el secreto en múltiples regiones (alta disponibilidad)
 4. El valor se cifra en reposo con claves gestionadas por Google
 
 **Verificar que el secreto se creó:**
+
 ```bash
 gcloud secrets list --project=project-d145b0df-76c9-4324-a6c
 ```
 
 **Desde la consola GCP:**
+
 1. Ve a **Security → Secret Manager** (menú lateral)
 2. Click **"+ Create Secret"**
 3. Nombre: `google-api-key`
@@ -456,6 +473,7 @@ gcloud secrets get-iam-policy google-api-key \
 ```
 
 Si el rol no aparece, agregarlo manualmente:
+
 ```bash
 gcloud secrets add-iam-policy-binding google-api-key \
   --member="serviceAccount:cloudrun-agent-sa@project-d145b0df-76c9-4324-a6c.iam.gserviceaccount.com" \
@@ -464,6 +482,7 @@ gcloud secrets add-iam-policy-binding google-api-key \
 ```
 
 **Desde la consola GCP (verificar/agregar acceso):**
+
 1. Ve a **Secret Manager → `google-api-key`**
 2. Pestaña **"Permissions"**
 3. Verifica que `cloudrun-agent-sa@...` tenga `Secret Manager Secret Accessor`
@@ -514,6 +533,7 @@ gcloud run deploy agente-ia-backend \
 > Las demás variables (no sensibles) se pasan como env vars normales.
 
 **Desde la consola GCP (alternativa visual):**
+
 1. Ve a **Cloud Run → Create Service**
 2. Click **"Select"** → busca la imagen en Artifact Registry (`agente-ia-repo/backend`)
 3. Service name: `agente-ia-backend`
@@ -538,11 +558,13 @@ gcloud run deploy agente-ia-backend \
 #### Después del deploy
 
 Cloud Run asigna una URL pública al servicio:
+
 ```
 https://agente-ia-backend-XXXXXXXX-uc.a.run.app
 ```
 
 **Probar el servicio:**
+
 ```bash
 # Health check
 curl https://agente-ia-backend-XXXXXXXX-uc.a.run.app/api/health
@@ -561,6 +583,7 @@ curl -X POST https://agente-ia-backend-XXXXXXXX-uc.a.run.app/api/chat \
 Si necesitas rotar la key (por ejemplo, si se expuso en un commit):
 
 **Desde Cloud Shell / terminal:**
+
 ```bash
 # 1. Generar nueva API key en aistudio.google.com/app/apikeys
 # 2. Revocar la key anterior en AI Studio
@@ -577,6 +600,7 @@ gcloud run services update agente-ia-backend \
 ```
 
 **Desde la consola GCP:**
+
 1. Ve a **Secret Manager → `google-api-key`**
 2. Click **"+ New Version"**
 3. Pega la nueva API key → **"Add New Version"**
@@ -613,6 +637,94 @@ gcloud run services update agente-ia-backend \
 
 ---
 
+## Artifact Registry vs Cloud Build Trigger — Diferencias y funcionamiento
+
+Son dos servicios distintos que trabajan en secuencia: uno construye, el otro almacena.
+
+### Analogía
+
+```
+Trigger (build-agente-ia-repo)     →     Repositorio (agente-ia-repo)
+        "la fábrica"                           "la bodega"
+
+  Toma tu código fuente                  Guarda la imagen ya construida
+  Ejecuta el Dockerfile                  Lista para que Cloud Run la use
+  Produce una imagen Docker         →    y la descargue cuando desplegue
+```
+
+### Artifact Registry — `agente-ia-repo`
+
+**Qué es:** Almacén de imágenes Docker privado dentro del proyecto GCP.
+
+**Qué guarda:**
+
+```text
+agente-ia-repo/
+└── backend
+    ├── sha256:abc123...   ← versión 1 (primer build)
+    ├── sha256:def456...   ← versión 2 (segundo build)
+    └── latest             ← siempre apunta al más reciente
+```
+
+- Cloud Build **escribe** aquí después de construir
+- Cloud Run **lee** de aquí cuando despliega
+- No ejecuta nada — solo almacena
+
+### Cloud Build Trigger — `build-agente-ia-repo`
+
+**Qué es:** Regla automática que dice "cuando ocurra X evento, ejecuta este proceso de build".
+
+**Flujo al hacer `git push origin main`:**
+
+```text
+1. GitHub detecta el push en rama main
+2. GitHub notifica a Cloud Build (via webhook)
+3. El trigger "build-agente-ia-repo" se activa
+4. Cloud Build descarga tu código del repo
+5. Lee cloudbuild.yaml → ejecuta docker build con el Dockerfile
+6. Publica la imagen resultante en agente-ia-repo
+7. Build completado ✅ (visible en Cloud Build → History)
+```
+
+No almacena nada — solo orquesta el proceso de construcción.
+
+### Flujo completo en el proyecto
+
+```text
+Tu máquina                GCP
+──────────                ──────────────────────────────────────────────
+                          Cloud Build Trigger
+git push       ────────▶  build-agente-ia-repo
+origin main               │
+                          │  Lee cloudbuild.yaml
+                          │  Ejecuta Dockerfile
+                          ▼
+                          Artifact Registry
+                          agente-ia-repo/backend:latest
+                          │
+                          │  Cloud Run descarga la imagen al deployar
+                          ▼
+                          Cloud Run — agente-ia-backend
+                          https://agent-backend-xxx.run.app
+```
+
+### Comparativa
+
+| | Trigger `build-agente-ia-repo` | Repositorio `agente-ia-repo` |
+|---|---|---|
+| **Tipo** | Cloud Build Trigger | Artifact Registry Repository |
+| **Rol** | Orquestador / fábrica | Almacén / bodega |
+| **Se activa** | Con `git push` a `main` | Nunca (pasivo, solo recibe) |
+| **Qué hace** | Construye la imagen Docker | Guarda la imagen Docker |
+| **Quién escribe** | Cloud Build (el trigger) | Cloud Build (resultado del build) |
+| **Quién lee** | Nadie | Cloud Run al desplegar |
+| **Persiste** | No (el proceso termina) | Sí (guarda todas las versiones) |
+
+> Sin el **trigger** → habría que construir la imagen manualmente con `gcloud builds submit` cada vez.
+> Sin el **repositorio** → la imagen no tendría dónde guardarse y Cloud Run no podría descargarla.
+
+---
+
 ## Lecciones aprendidas
 
 | Problema | Causa | Solución |
@@ -625,3 +737,83 @@ gcloud run services update agente-ia-backend \
 | `429 RESOURCE_EXHAUSTED` embeddings | Cuota de Vertex AI para `textembedding-gecko` agotada | Solicitar aumento de cuota en GCP, o usar `USE_VERTEX_AI=false` (Google AI Studio gratis) |
 | API key expuesta en GitHub | Key hardcodeada en archivo versionado (commit) | Usar `<TU_API_KEY>` en docs. Almacenar keys reales en Secret Manager o `.env` (gitignored). Si se expone: rotar inmediatamente, limpiar historial con `git filter-repo`, y force push |
 | `Failed to trigger build: if 'build.service_account' is specified...` | Al usar SA personalizada en el trigger, Cloud Build exige configurar dónde guardar logs | Agregar `options: logging: CLOUD_LOGGING_ONLY` en `cloudbuild.yaml` |
+| `fatal: pathspec 'project_genai/cloudbuild.yaml' did not match any files` | El repo git tiene raíz en `project_genai/`, no en el directorio padre | Usar rutas relativas a la raíz del repo: `git add cloudbuild.yaml` (sin prefijo `project_genai/`) |
+
+---
+
+## Git / GitHub — Flujo de trabajo recomendado
+
+### Comandos esenciales
+
+```bash
+# Ver estado de cambios
+git status
+
+# Ver diferencias (salir con 'q')
+git diff
+
+# Agregar archivos al staging
+git add .                          # todos los archivos
+git add cloudbuild.yaml            # archivo específico
+
+# Hacer commit
+git commit -m "descripción del cambio"
+
+# Subir al remoto
+git push origin main               # primera vez sin -u
+git push -u origin main            # vincula rama local con remota (solo primera vez)
+git push                           # siguientes veces (si ya se usó -u)
+
+# Traer cambios del remoto
+git pull origin main
+
+# Ver historial
+git log --oneline
+```
+
+### ¿Qué significa `-u` en `git push`?
+
+El flag `-u` (`--set-upstream`) vincula la rama local con la remota. Solo se necesita la **primera vez** que subes una rama nueva. Después basta con `git push` / `git pull` sin especificar rama.
+
+### Rutas en `git add` — regla importante
+
+Las rutas en `git add` son **relativas a la raíz del repositorio** (donde está la carpeta `.git`), no al directorio de trabajo desde donde ejecutas el comando.
+
+```bash
+# Si la raíz del repo es project_genai/:
+git add cloudbuild.yaml             # ✅ correcto
+git add project_genai/cloudbuild.yaml  # ❌ error si ya estás dentro de project_genai/
+```
+
+---
+
+## Buenas prácticas de Service Accounts en producción
+
+### Principio base: mínimo privilegio + una SA por servicio
+
+En producción **no usar una sola SA para todo**. Separar por responsabilidad:
+
+| Service Account | Roles mínimos | Responsabilidad |
+|---|---|---|
+| `sa-cloudbuild` | `cloudbuild.builds.editor`, `artifactregistry.writer`, `storage.objectViewer`, `logging.logWriter` | Solo construye y sube imágenes |
+| `sa-cloudrun` | `run.invoker`, `secretmanager.secretAccessor`, `artifactregistry.reader`, `aiplatform.user` | Solo ejecuta la app y lee secretos |
+| `sa-github-actions` | `iam.serviceAccountTokenCreator` | Solo para CI/CD desde GitHub Actions |
+
+### Lo que NO hacer en producción
+
+```text
+❌ Una sola SA con roles Owner o Editor
+❌ SA con roles que no necesita
+❌ Compartir SA entre múltiples servicios críticos
+❌ Dejar JSON keys en el código o .env
+```
+
+### Autenticación recomendada según entorno
+
+| Entorno | Método | Por qué |
+| --- | --- | --- |
+| **Desarrollo local** | `gcloud auth application-default login` (ADC) | Sin JSON keys, usa tu cuenta Google |
+| **Cloud Run** | Workload Identity (automático) | Sin JSON keys, GCP lo gestiona internamente |
+| **GitHub Actions** | Workload Identity Federation | Sin JSON keys, usa tokens OIDC temporales |
+
+> **Regla general:** si una SA es comprometida, el daño debe quedar contenido solo en lo que esa SA puede hacer. Una SA con permisos mínimos limita el radio de impacto.

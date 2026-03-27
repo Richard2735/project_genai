@@ -17,13 +17,13 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from agent import setup_agent
 
 st.set_page_config(
-    page_title="Agente IA - Módulo II",
+    page_title="Agente IA - Proyecto Final",
     page_icon="🤖",
     layout="centered"
 )
 
 st.title("🤖 Agente Inteligente con LangChain")
-st.caption("Proyecto Integrador Módulo II — Herramientas: data_prep | rag_search | dlp_anonymizer")
+st.caption("Proyecto Asistente de R.R.H.H — Herramientas: data_prep | rag_search | dlp_anonymizer")
 
 # Inicializar agente y historial en session_state
 if "agent_executor" not in st.session_state:

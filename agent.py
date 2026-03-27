@@ -86,7 +86,7 @@ def main():
     """Bucle principal de conversación con el agente."""
 
     print("\n" + "="*70)
-    print("🤖 Agente IA - Proyecto Integrador Módulo II")
+    print("🤖 Agente Asistente de R.R.H.H")
     print("="*70)
     print("Herramientas disponibles:")
     print("  1. data_prep_tool     → Limpia y convierte texto a JSONL")
