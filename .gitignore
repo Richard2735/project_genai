@@ -3,13 +3,34 @@
 # ================================
 venv/
 .venv/
+env/
 
 # ================================
 # Credenciales y secretos (NUNCA subir)
 # ================================
 .env
+.env.local
+.env.production
+.env.*.local
+
+# Service Account keys (cualquier ubicación)
 credentials/*.json
 credentials/*.key
+credentials/*.p12
+credentials/*.pem
+*.keystore
+
+# Archivos de secretos genéricos
+*.secret
+*.secrets
+secret_*
+*_secret.json
+*_credentials.json
+service_account*.json
+
+# Google Cloud
+gcloud/
+application_default_credentials.json
 
 # ================================
 # Cache de Python
@@ -18,11 +39,17 @@ __pycache__/
 *.pyc
 *.pyo
 *.egg-info/
+dist/
+build/
+*.egg
 
 # ================================
-# Indice FAISS (se regenera con scripts/ingestar_documentos.py)
+# Vector Store (se regenera con scripts/ingestar_documentos.py)
 # ================================
 vectorstore/
+faiss_index/
+*.faiss
+*.pkl
 
 # ================================
 # PDFs descargados (se regeneran desde Drive)
@@ -33,8 +60,64 @@ docs/corporativos/REGLAMENTOS/
 docs/corporativos/OTROS/
 
 # ================================
+# Datos procesados (se regeneran)
+# ================================
+data/
+output/
+*.jsonl
+*.csv
+
+# ================================
+# Frontend (Next.js)
+# ================================
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/.env
+frontend/.env.local
+frontend/.env.production
+frontend/.env.*.local
+
+# Node.js genérico
+node_modules/
+.npm/
+package-lock.json
+yarn.lock
+
+# ================================
+# IDE y editores
+# ================================
+.vscode/
+.idea/
+.cursor/
+*.swp
+*.swo
+*~
+
+# ================================
 # Archivos de sistema
 # ================================
 .DS_Store
 Thumbs.db
+Desktop.ini
 *.tmp
+*.bak
+*.log
+
+# ================================
+# Docker (archivos locales, no para el repo)
+# ================================
+docker-compose.override.yml
+
+# ================================
+# Claude Code / AI agents (contexto local)
+# ================================
+.claude/
+.gemini/
+
+# ================================
+# Archivos de respaldo y temporales
+# ================================
+*.backup
+*.orig
+*.rej

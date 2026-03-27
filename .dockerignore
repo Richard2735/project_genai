@@ -5,44 +5,80 @@
 # Todo lo listado aquí se ignora en el COPY . .
 # Esto reduce el tamaño de la imagen y evita copiar secretos.
 
+# ============================
+# SEGURIDAD — Secretos y credenciales
+# ============================
+# NUNCA copiar secretos al contenedor (en Cloud Run se usa Secret Manager + Workload Identity)
+.env
+.env.*
+credentials/
+*.secret
+*.secrets
+service_account*.json
+*_credentials.json
+application_default_credentials.json
+
+# ============================
 # Entorno virtual (se instala fresco con pip install)
+# ============================
 venv/
 .venv/
 
-# Variables de entorno con secretos (NUNCA subir al contenedor)
-.env
-
+# ============================
 # Cache de Python
+# ============================
 __pycache__/
 *.pyc
 *.pyo
 
+# ============================
 # Git
+# ============================
 .git/
 .gitignore
 
-# IDE
+# ============================
+# IDE y editores
+# ============================
 .vscode/
 .idea/
+.cursor/
 
+# ============================
 # Documentación (no necesaria en runtime)
+# ============================
 *.md
 docs/
 !docs/corporativos/
 
-# Credenciales locales (en Cloud Run se usa Workload Identity)
-credentials/
-
-# Archivos del agente (skills, comandos de Claude Code)
+# ============================
+# Claude Code / AI agents (contexto local)
+# ============================
 .agent/
 .gemini/
+.claude/
 
+# ============================
 # Interfaz Streamlit (solo para desarrollo local)
+# ============================
 interface/
 
+# ============================
+# Frontend (se despliega por separado en Vercel)
+# ============================
+frontend/
+
+# ============================
 # Tests (no son para producción)
+# ============================
 test_agent.py
 
-# Archivos de respaldo
+# ============================
+# Archivos innecesarios en producción
+# ============================
 *.bak
 *.tmp
+*.log
+*.backup
+LICENSE
+CLAUDE.md

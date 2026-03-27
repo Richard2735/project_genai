@@ -1,0 +1,390 @@
+warning: in the working copy of '.dockerignore', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of '.gitignore', LF will be replaced by CRLF the next time Git touches it
+[1mdiff --git a/.dockerignore b/.dockerignore[m
+[1mindex f1ef367..b73ea2d 100644[m
+[1m--- a/.dockerignore[m
+[1m+++ b/.dockerignore[m
+[36m@@ -5,44 +5,80 @@[m
+ # Todo lo listado aquí se ignora en el COPY . .[m
+ # Esto reduce el tamaño de la imagen y evita copiar secretos.[m
+ [m
+[32m+[m[32m# ============================[m
+[32m+[m[32m# SEGURIDAD — Secretos y credenciales[m
+[32m+[m[32m# ============================[m
+[32m+[m[32m# NUNCA copiar secretos al contenedor (en Cloud Run se usa Secret Manager + Workload Identity)[m
+[32m+[m[32m.env[m
+[32m+[m[32m.env.*[m
+[32m+[m[32mcredentials/[m
+[32m+[m[32m*.secret[m
+[32m+[m[32m*.secrets[m
+[32m+[m[32mservice_account*.json[m
+[32m+[m[32m*_credentials.json[m
+[32m+[m[32mapplication_default_credentials.json[m
+[32m+[m
+[32m+[m[32m# ============================[m
+ # Entorno virtual (se instala fresco con pip install)[m
+[32m+[m[32m# ============================[m
+ venv/[m
+ .venv/[m
+ [m
+[31m-# Variables de entorno con secretos (NUNCA subir al contenedor)[m
+[31m-.env[m
+[31m-[m
+[32m+[m[32m# ============================[m
+ # Cache de Python[m
+[32m+[m[32m# ============================[m
+ __pycache__/[m
+ *.pyc[m
+ *.pyo[m
+ [m
+[32m+[m[32m# ============================[m
+ # Git[m
+[32m+[m[32m# ============================[m
+ .git/[m
+ .gitignore[m
+ [m
+[31m-# IDE[m
+[32m+[m[32m# ============================[m
+[32m+[m[32m# IDE y editores[m
+[32m+[m[32m# ============================[m
+ .vscode/[m
+ .idea/[m
+[32m+[m[32m.cursor/[m
+ [m
+[32m+[m[32m# ============================[m
+ # Documentación (no necesaria en runtime)[m
+[32m+[m[32m# ============================[m
+ *.md[m
+ docs/[m
+ !docs/corporativos/[m
+ [m
+[31m-# Credenciales locales (en Cloud Run se usa Workload Identity)[m
+[31m-credentials/[m
+[31m-[m
+[31m-# Archivos del agente (skills, comandos de Claude Code)[m
+[32m+[m[32m# ============================[m
+[32m+[m[32m# Claude Code / AI agents (contexto local)[m
+[32m+[m[32m# ============================[m
+ .agent/[m
+ .gemini/[m
+[32m+[m[32m.claude/[m
+ [m
+[32m+[m[32m# ============================[m
+ # Interfaz Streamlit (solo para desarrollo local)[m
+[32m+[m[32m# ============================[m
+ interface/[m
+ [m
+[32m+[m[32m# ============================[m
+[32m+[m[32m# Frontend (se despliega por separado en Vercel)[m
+[32m+[m[32m# ============================[m
+[32m+[m[32mfrontend/[m
+[32m+[m
+[32m+[m[32m# ============================[m
+ # Tests (no son para producción)[m
+[32m+[m[32m# ============================[m
+ test_agent.py[m
+ [m
+[31m-# Archivos de respaldo[m
+[32m+[m[32m# ============================[m
+[32m+[m[32m# Archivos innecesarios en producción[m
+[32m+[m[32m# ============================[m
+ *.bak[m
+ *.tmp[m
+[32m+[m[32m*.log[m
+[32m+[m[32m*.backup[m
+[32m+[m[32mLICENSE[m
+[32m+[m[32mCLAUDE.md[m
+[1mdiff --git a/.gitignore b/.gitignore[m
+[1mindex b6f9d01..4d0c12c 100644[m
+[1m--- a/.gitignore[m
+[1m+++ b/.gitignore[m
+[36m@@ -3,13 +3,34 @@[m
+ # ================================[m
+ venv/[m
+ .venv/[m
+[32m+[m[32menv/[m
+ [m
+ # ================================[m
+ # Credenciales y secretos (NUNCA subir)[m
+ # ================================[m
+ .env[m
+[32m+[m[32m.env.local[m
+[32m+[m[32m.env.production[m
+[32m+[m[32m.env.*.local[m
+[32m+[m
+[32m+[m[32m# Service Account keys (cualquier ubicación)[m
+ credentials/*.json[m
+ credentials/*.key[m
+[32m+[m[32mcredentials/*.p12[m
+[32m+[m[32mcredentials/*.pem[m
+[32m+[m[32m*.keystore[m
+[32m+[m
+[32m+[m[32m# Archivos de secretos genéricos[m
+[32m+[m[32m*.secret[m
+[32m+[m[32m*.secrets[m
+[32m+[m[32msecret_*[m
+[32m+[m[32m*_secret.json[m
+[32m+[m[32m*_credentials.json[m
+[32m+[m[32mservice_account*.json[m
+[32m+[m
+[32m+[m[32m# Google Cloud[m
+[32m+[m[32mgcloud/[m
+[32m+[m[32mapplication_default_credentials.json[m
+ [m
+ # ================================[m
+ # Cache de Python[m
+[36m@@ -18,11 +39,17 @@[m [m__pycache__/[m
+ *.pyc[m
+ *.pyo[m
+ *.egg-info/[m
+[32m+[m[32mdist/[m
+[32m+[m[32mbuild/[m
+[32m+[m[32m*.egg[m
+ [m
+ # ================================[m
+[31m-# Indice FAISS (se regenera con scripts/ingestar_documentos.py)[m
+[32m+[m[32m# Vector Store (se regenera con scripts/ingestar_documentos.py)[m
+ # ================================[m
+ vectorstore/[m
+[32m+[m[32mfaiss_index/[m
+[32m+[m[32m*.faiss[m
+[32m+[m[32m*.pkl[m
+ [m
+ # ================================[m
+ # PDFs descargados (se regeneran desde Drive)[m
+[36m@@ -32,9 +59,65 @@[m [mdocs/corporativos/PROCEDIMIENTOS/[m
+ docs/corporativos/REGLAMENTOS/[m
+ docs/corporativos/OTROS/[m
+ [m
+[32m+[m[32m# ================================[m
+[32m+[m[32m# Datos procesados (se regeneran)[m
+[32m+[m[32m# ================================[m
+[32m+[m[32mdata/[m
+[32m+[m[32moutput/[m
+[32m+[m[32m*.jsonl[m
+[32m+[m[32m*.csv[m
+[32m+[m
+[32m+[m[32m# ================================[m
+[32m+[m[32m# Frontend (Next.js)[m
+[32m+[m[32m# ================================[m
+[32m+[m[32mfrontend/node_modules/[m
+[32m+[m[32mfrontend/.next/[m
+[32m+[m[32mfrontend/out/[m
+[32m+[m[32mfrontend/.env[m
+[32m+[m[32mfrontend/.env.local[m
+[32m+[m[32mfrontend/.env.production[m
+[32m+[m[32mfrontend/.env.*.local[m
+[32m+[m
+[32m+[m[32m# Node.js genérico[m
+[32m+[m[32mnode_modules/[m
+[32m+[m[32m.npm/[m
+[32m+[m[32mpackage-lock.json[m
+[32m+[m[32myarn.lock[m
+[32m+[m
+[32m+[m[32m# ================================[m
+[32m+[m[32m# IDE y editores[m
+[32m+[m[32m# ================================[m
+[32m+[m[32m.vscode/[m
+[32m+[m[32m.idea/[m
+[32m+[m[32m.cursor/[m
+[32m+[m[32m*.swp[m
+[32m+[m[32m*.swo[m
+[32m+[m[32m*~[m
+[32m+[m
+ # ================================[m
+ # Archivos de sistema[m
+ # ================================[m
+ .DS_Store[m
+ Thumbs.db[m
+[32m+[m[32mDesktop.ini[m
+ *.tmp[m
+[32m+[m[32m*.bak[m
+[32m+[m[32m*.log[m
+[32m+[m
+[32m+[m[32m# ================================[m
+[32m+[m[32m# Docker (archivos locales, no para el repo)[m
+[32m+[m[32m# ================================[m
+[32m+[m[32mdocker-compose.override.yml[m
+[32m+[m
+[32m+[m[32m# ================================[m
+[32m+[m[32m# Claude Code / AI agents (contexto local)[m
+[32m+[m[32m# ================================[m
+[32m+[m[32m.claude/[m
+[32m+[m[32m.gemini/[m
+[32m+[m
+[32m+[m[32m# ================================[m
+[32m+[m[32m# Archivos de respaldo y temporales[m
+[32m+[m[32m# ================================[m
+[32m+[m[32m*.backup[m
+[32m+[m[32m*.orig[m
+[32m+[m[32m*.rej[m
+[1mdiff --git a/docs/GCP_SERVICIOS_Y_PERMISOS.md b/docs/GCP_SERVICIOS_Y_PERMISOS.md[m
+[1mindex 7ba57b9..a161087 100644[m
+[1m--- a/docs/GCP_SERVICIOS_Y_PERMISOS.md[m
+[1m+++ b/docs/GCP_SERVICIOS_Y_PERMISOS.md[m
+[36m@@ -1,4 +1,4 @@[m
+[31m-# Servicios, Roles y Permisos GCP — Proyecto Agente IA (s13)[m
+[32m+[m[32m# Servicios, Roles y Permisos GCP — Proyecto Agente IA (project_genai)[m
+ [m
+ ## APIs a habilitar en el proyecto GCP[m
+ [m
+[36m@@ -320,11 +320,11 @@[m [mSube tu código a Cloud Build, ejecuta el Dockerfile y guarda la imagen en Artif[m
+ [m
+ **Desde Cloud Shell / terminal:**[m
+ [m
+[31m-> **Importante:** Ejecutar este comando **dentro del directorio `s13/`** (donde está el Dockerfile).[m
+[32m+[m[32m> **Importante:** Ejecutar este comando **dentro del directorio `project_genai/`** (donde está el Dockerfile).[m
+ > Si usas Cloud Shell, primero sube tu código o clona el repo.[m
+ [m
+ ```bash[m
+[31m-cd s13/[m
+[32m+[m[32mcd project_genai/[m
+ [m
+ gcloud builds submit \[m
+   --tag us-central1-docker.pkg.dev/project-d145b0df-76c9-4324-a6c/agente-ia-repo/backend \[m
+[36m@@ -332,7 +332,7 @@[m [mgcloud builds submit \[m
+ ```[m
+ [m
+ **Qué hace este comando:**[m
+[31m-1. Empaqueta todo el directorio `s13/` (respetando `.dockerignore`)[m
+[32m+[m[32m1. Empaqueta todo el directorio `project_genai/` (respetando `.dockerignore`)[m
+ 2. Lo sube a Cloud Build como un tarball[m
+ 3. Cloud Build ejecuta el `Dockerfile` paso a paso (instala Python, dependencias, copia código)[m
+ 4. La imagen resultante se publica en: `us-central1-docker.pkg.dev/project-d145b0df-76c9-4324-a6c/agente-ia-repo/backend`[m
+[36m@@ -349,9 +349,75 @@[m [mgcloud artifacts docker images list \[m
+   us-central1-docker.pkg.dev/project-d145b0df-76c9-4324-a6c/agente-ia-repo[m
+ ```[m
+ [m
+[31m-#### 6b. Deploy a Cloud Run[m
+[32m+[m[32m#### 6b. Crear secreto en Secret Manager (Gobernanza de datos)[m
+ [m
+[31m-Una vez que la imagen está en Artifact Registry, se despliega como servicio en Cloud Run.[m
+[32m+[m[32mAntes de desplegar, almacenamos la API key en **Secret Manager** para que nunca quede[m
+[32m+[m[32mexpuesta como texto plano en la configuración de Cloud Run.[m
+[32m+[m
+[32m+[m[32m> **¿Por qué Secret Manager?** Las env vars en texto plano son visibles para cualquiera con[m
+[32m+[m[32m> acceso al servicio en la consola GCP. Secret Manager cifra el valor, controla acceso por IAM,[m
+[32m+[m[32m> y permite rotar keys sin redesplegar.[m
+[32m+[m
+[32m+[m[32m**Desde Cloud Shell / terminal:**[m
+[32m+[m
+[32m+[m[32m```bash[m
+[32m+[m[32m# Crear el secreto con la API key[m
+[32m+[m[32m# Reemplaza TU_NUEVA_API_KEY con tu key real (obtenida en aistudio.google.com/app/apikeys)[m
+[32m+[m[32mecho -n "TU_NUEVA_API_KEY" | gcloud secrets create google-api-key \[m
+[32m+[m[32m  --data-file=- \[m
+[32m+[m[32m  --replication-policy=automatic \[m
+[32m+[m[32m  --project=project-d145b0df-76c9-4324-a6c[m
+[32m+[m[32m```[m
+[32m+[m
+[32m+[m[32m**Qué hace este comando:**[m
+[32m+[m[32m1. Crea un secreto llamado `google-api-key` en Secret Manager[m
+[32m+[m[32m2. El valor es tu API key de Google AI Studio[m
+[32m+[m[32m3. `--replication-policy=automatic` replica el secreto en múltiples regiones (alta disponibilidad)[m
+[32m+[m[32m4. El valor se cifra en reposo con claves gestionadas por Google[m
+[32m+[m
+[32m+[m[32m**Verificar que el secreto se creó:**[m
+[32m+[m[32m```bash[m
+[32m+[m[32mgcloud secrets list --project=project-d145b0df-76c9-4324-a6c[m
+[32m+[m[32m```[m
+[32m+[m
+[32m+[m[32m**Desde la consola GCP:**[m
+[32m+[m[32m1. Ve a **Security → Secret Manager** (menú lateral)[m
+[32m+[m[32m2. Click **"+ Create Secret"**[m
+[32m+[m[32m3. Nombre: `google-api-key`[m
+[32m+[m[32m4. Secret value: pega tu API key[m
+[32m+[m[32m5. Replication: **"Automatic"** (dejar por defecto)[m
+[32m+[m[32m6. Click **"Create Secret"**[m
+[32m+[m
+[32m+[m[32m**Verificar acceso de la SA:**[m
+[32m+[m
+[32m+[m[32mLa SA `cloudrun-agent-sa` ya tiene el rol `Secret Manager Secret Accessor` (configurado en el paso de SAs).[m
+[32m+[m[32mPara verificar:[m
+[32m+[m
+[32m+[m[32m```bash[m
+[32m+[m[32mgcloud secrets get-iam-policy google-api-key \[m
+[32m+[m[32m  --project=project-d145b0df-76c9-4324-a6c[m
+[32m+[m[32m```[m
+[32m+[m
+[32m+[m[32mSi el rol no aparece, agregarlo manualmente:[m
+[32m+[m[32m```bash[m
+[32m+[m[32mgcloud secrets add-iam-policy-binding google-api-key \[m
+[32m+[m[32m  --member="serviceAccount:cloudrun-agent-sa@project-d145b0df-76c9-4324-a6c.iam.gserviceaccount.com" \[m
+[32m+[m[32m  --role="roles/secretmanager.secretAccessor" \[m
+[32m+[m[32m  --project=project-d145b0df-76c9-4324-a6c[m
+[32m+[m[32m```[m
+[32m+[m
+[32m+[m[32m**Desde la consola GCP (verificar/agregar acceso):**[m
+[32m+[m[32m1. Ve a **Secret Manager → `google-api-key`**[m
+[32m+[m[32m2. Pestaña **"Permissions"**[m
+[32m+[m[32m3. Verifica que `cloudrun-agent-sa@...` tenga `Secret Manager Secret Accessor`[m
+[32m+[m[32m4. Si no aparece: click **"Grant Access"** → pega el email de la SA → rol `Secret Manager Secret Accessor` → **Save**[m
+[32m+[m
+[32m+[m[32m---[m
+[32m+[m
+[32m+[m[32m#### 6c. Deploy a Cloud Run[m
+[32m+[m
+[32m+[m[32mUna vez que la imagen está en Artifact Registry y el secreto en Secret Manager,[m
+[32m+[m[32mse despliega como servicio en Cloud Run.[m
+ [m
+ **Desde Cloud Shell / terminal:**[m
+ [m
+[36m@@ -361,7 +427,8 @@[m [mgcloud run deploy agente-ia-backend \[m
+   --service-account=cloudrun-agent-sa@project-d145b0df-76c9-4324-a6c.iam.gserviceaccount.com \[m
+   --region=us-central1 \[m
+   --allow-unauthenticated \[m
+[31m-  --set-env-vars="GOOGLE_API_KEY=TU_API_KEY_AQUI,USE_VERTEX_AI=true,GCP_PROJECT_ID=project-d145b0df-76c9-4324-a6c,GCP_REGION=us-central1" \[m
+[32m+[m[32m  --set-secrets="GOOGLE_API_KEY=google-api-key:latest" \[m
+[32m+[m[32m  --set-env-vars="USE_VERTEX_AI=true,GCP_PROJECT_ID=project-d145b0df-76c9-4324-a6c,GCP_REGION=us-central1" \[m
+   --project=project-d145b0df-76c9-4324-a6c[m
+ ```[m
+ [m
+[36m@@ -373,19 +440,21 @@[m [mgcloud run deploy agente-ia-backend \[m
+ | `--service-account=...` | SA de producción con roles de Vertex AI, DLP, Secret Manager |[m
+ | `--region=us-central1` | Región donde se despliega el servicio |[m
+ | `--allow-unauthenticated` | Permite acceso público (necesario para el frontend) |[m
+[31m-| `--set-env-vars=...` | Variables de entorno que reemplazan al `.env` (no se copia al contenedor) |[m
+[32m+[m[32m| `--set-secrets=...` | Inyecta secretos de Secret Manager como env vars (cifrados, no en texto plano) |[m
+[32m+[m[32m| `--set-env-vars=...` | Variables de entorno no sensibles |[m
+ [m
+[31m-**Variables de entorno necesarias en Cloud Run:**[m
+[32m+[m[32m**Variables de entorno del servicio:**[m
+ [m
+[31m-| Variable | Valor | Por qué |[m
+[31m-|----------|-------|---------|[m
+[31m-| `GOOGLE_API_KEY` | `AIzaSyAr6A...` | API key para Gemini 2.5 Flash (LLM) |[m
+[31m-| `USE_VERTEX_AI` | `true` | Usar Vertex AI para embeddings (text-embedding-004) |[m
+[31m-| `GCP_PROJECT_ID` | `project-d145b0df-76c9-4324-a6c` | Proyecto GCP para Vertex AI |[m
+[31m-| `GCP_REGION` | `us-central1` | Región de Vertex AI |[m
+[32m+[m[32m| Variable | Origen | Valor | Por qué |[m
+[32m+[m[32m|----------|--------|-------|---------|[m
+[32m+[m[32m| `GOOGLE_API_KEY` | **Secret Manager** (`google-api-key:latest`) | Cifrado | API key para Gemini 2.5 Flash (LLM) |[m
+[32m+[m[32m| `USE_VERTEX_AI` | Env var | `true` | Usar Vertex AI para embeddings (text-embedding-004) |[m
+[32m+[m[32m| `GCP_PROJECT_ID` | Env var | `project-d145b0df-76c9-4324-a6c` | Proyecto GCP para Vertex AI |[m
+[32m+[m[32m| `GCP_REGION` | Env var | `us-central1` | Región de Vertex AI |[m
+ [m
+[31m-> **Nota:** El `.env` no se copia al contenedor (está en `.dockerignore`). Las variables se pasan[m
+[31m-> como env vars del servicio Cloud Run. En producción, usar **Secret Manager** para la API key.[m
+[32m+[m[32m> **Nota:** El `.env` no se copia al contenedor (está en `.dockerignore`).[m
+[32m+[m[32m> La API key se inyecta desde Secret Manager en runtime — nunca queda expuesta en la config.[m
+[32m+[m[32m> Las demás variables (no sensibles) se pasan como env vars normales.[m
+ [m
+ **Desde la consola GCP (alternativa visual):**[m
+ 1. Ve a **Cloud Run → Create Service**[m
+[36m@@ -395,11 +464,16 @@[m [mgcloud run deploy agente-ia-backend \[m
+ 5. Authentication: **"Allow unauthenticated invocations"** ✅[m
+ 6. En **"Container, Networking, Security"** → pestaña **"Container"**:[m
+    - Port: `8080`[m
+[31m-7. En pestaña **"Variables & Secrets"** → **"+ Add Variable"**:[m
+[31m-   - `GOOGLE_API_KEY` = `(tu API key)`[m
+[31m-   - `USE_VERTEX_AI` = `true`[m
+[31m-   - `GCP_PROJECT_ID` = `project-d145b0df-76c9-4324-a6c`[m
+[31m-   - `GCP_REGION` = `us-central1`[m
+[32m+[m[32m7. En pestaña **"Variables & Secrets"**:[m
+[32m+[m[32m   - Click **"+ Add Variable"** (para env vars normales):[m
+[32m+[m[32m     - `USE_VERTEX_AI` = `true`[m
+[32m+[m[32m     - `GCP_PROJECT_ID` = `project-d145b0df-76c9-4324-a6c`[m
+[32m+[m[32m     - `GCP_REGION` = `us-central1`[m
+[32m+[m[32m   - Click **"+ Reference a Secret"** (para la API key):[m
+[32m+[m[32m     - Name: `GOOGLE_API_KEY`[m
+[32m+[m[32m 

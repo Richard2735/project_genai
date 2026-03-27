@@ -1,4 +1,4 @@
-# Servicios, Roles y Permisos GCP — Proyecto Agente IA (s13)
+# Servicios, Roles y Permisos GCP — Proyecto Agente IA (project_genai)
 
 ## APIs a habilitar en el proyecto GCP
 
@@ -320,11 +320,11 @@ Sube tu código a Cloud Build, ejecuta el Dockerfile y guarda la imagen en Artif
 
 **Desde Cloud Shell / terminal:**
 
-> **Importante:** Ejecutar este comando **dentro del directorio `s13/`** (donde está el Dockerfile).
+> **Importante:** Ejecutar este comando **dentro del directorio `project_genai/`** (donde está el Dockerfile).
 > Si usas Cloud Shell, primero sube tu código o clona el repo.
 
 ```bash
-cd s13/
+cd project_genai/
 
 gcloud builds submit \
   --tag us-central1-docker.pkg.dev/project-d145b0df-76c9-4324-a6c/agente-ia-repo/backend \
@@ -332,7 +332,7 @@ gcloud builds submit \
 ```
 
 **Qué hace este comando:**
-1. Empaqueta todo el directorio `s13/` (respetando `.dockerignore`)
+1. Empaqueta todo el directorio `project_genai/` (respetando `.dockerignore`)
 2. Lo sube a Cloud Build como un tarball
 3. Cloud Build ejecuta el `Dockerfile` paso a paso (instala Python, dependencias, copia código)
 4. La imagen resultante se publica en: `us-central1-docker.pkg.dev/project-d145b0df-76c9-4324-a6c/agente-ia-repo/backend`
@@ -349,9 +349,75 @@ gcloud artifacts docker images list \
   us-central1-docker.pkg.dev/project-d145b0df-76c9-4324-a6c/agente-ia-repo
 ```
 
-#### 6b. Deploy a Cloud Run
+#### 6b. Crear secreto en Secret Manager (Gobernanza de datos)
 
-Una vez que la imagen está en Artifact Registry, se despliega como servicio en Cloud Run.
+Antes de desplegar, almacenamos la API key en **Secret Manager** para que nunca quede
+expuesta como texto plano en la configuración de Cloud Run.
+
+> **¿Por qué Secret Manager?** Las env vars en texto plano son visibles para cualquiera con
+> acceso al servicio en la consola GCP. Secret Manager cifra el valor, controla acceso por IAM,
+> y permite rotar keys sin redesplegar.
+
+**Desde Cloud Shell / terminal:**
+
+```bash
+# Crear el secreto con la API key
+# Reemplaza TU_NUEVA_API_KEY con tu key real (obtenida en aistudio.google.com/app/apikeys)
+echo -n "TU_NUEVA_API_KEY" | gcloud secrets create google-api-key \
+  --data-file=- \
+  --replication-policy=automatic \
+  --project=project-d145b0df-76c9-4324-a6c
+```
+
+**Qué hace este comando:**
+1. Crea un secreto llamado `google-api-key` en Secret Manager
+2. El valor es tu API key de Google AI Studio
+3. `--replication-policy=automatic` replica el secreto en múltiples regiones (alta disponibilidad)
+4. El valor se cifra en reposo con claves gestionadas por Google
+
+**Verificar que el secreto se creó:**
+```bash
+gcloud secrets list --project=project-d145b0df-76c9-4324-a6c
+```
+
+**Desde la consola GCP:**
+1. Ve a **Security → Secret Manager** (menú lateral)
+2. Click **"+ Create Secret"**
+3. Nombre: `google-api-key`
+4. Secret value: pega tu API key
+5. Replication: **"Automatic"** (dejar por defecto)
+6. Click **"Create Secret"**
+
+**Verificar acceso de la SA:**
+
+La SA `cloudrun-agent-sa` ya tiene el rol `Secret Manager Secret Accessor` (configurado en el paso de SAs).
+Para verificar:
+
+```bash
+gcloud secrets get-iam-policy google-api-key \
+  --project=project-d145b0df-76c9-4324-a6c
+```
+
+Si el rol no aparece, agregarlo manualmente:
+```bash
+gcloud secrets add-iam-policy-binding google-api-key \
+  --member="serviceAccount:cloudrun-agent-sa@project-d145b0df-76c9-4324-a6c.iam.gserviceaccount.com" \
+  --role="roles/secretmanager.secretAccessor" \
+  --project=project-d145b0df-76c9-4324-a6c
+```
+
+**Desde la consola GCP (verificar/agregar acceso):**
+1. Ve a **Secret Manager → `google-api-key`**
+2. Pestaña **"Permissions"**
+3. Verifica que `cloudrun-agent-sa@...` tenga `Secret Manager Secret Accessor`
+4. Si no aparece: click **"Grant Access"** → pega el email de la SA → rol `Secret Manager Secret Accessor` → **Save**
+
+---
+
+#### 6c. Deploy a Cloud Run
+
+Una vez que la imagen está en Artifact Registry y el secreto en Secret Manager,
+se despliega como servicio en Cloud Run.
 
 **Desde Cloud Shell / terminal:**
 
@@ -361,7 +427,8 @@ gcloud run deploy agente-ia-backend \
   --service-account=cloudrun-agent-sa@project-d145b0df-76c9-4324-a6c.iam.gserviceaccount.com \
   --region=us-central1 \
   --allow-unauthenticated \
-  --set-env-vars="GOOGLE_API_KEY=TU_API_KEY_AQUI,USE_VERTEX_AI=true,GCP_PROJECT_ID=project-d145b0df-76c9-4324-a6c,GCP_REGION=us-central1" \
+  --set-secrets="GOOGLE_API_KEY=google-api-key:latest" \
+  --set-env-vars="USE_VERTEX_AI=true,GCP_PROJECT_ID=project-d145b0df-76c9-4324-a6c,GCP_REGION=us-central1" \
   --project=project-d145b0df-76c9-4324-a6c
 ```
 
@@ -373,19 +440,21 @@ gcloud run deploy agente-ia-backend \
 | `--service-account=...` | SA de producción con roles de Vertex AI, DLP, Secret Manager |
 | `--region=us-central1` | Región donde se despliega el servicio |
 | `--allow-unauthenticated` | Permite acceso público (necesario para el frontend) |
-| `--set-env-vars=...` | Variables de entorno que reemplazan al `.env` (no se copia al contenedor) |
+| `--set-secrets=...` | Inyecta secretos de Secret Manager como env vars (cifrados, no en texto plano) |
+| `--set-env-vars=...` | Variables de entorno no sensibles |
 
-**Variables de entorno necesarias en Cloud Run:**
+**Variables de entorno del servicio:**
 
-| Variable | Valor | Por qué |
-|----------|-------|---------|
-| `GOOGLE_API_KEY` | `AIzaSyAr6A...` | API key para Gemini 2.5 Flash (LLM) |
-| `USE_VERTEX_AI` | `true` | Usar Vertex AI para embeddings (text-embedding-004) |
-| `GCP_PROJECT_ID` | `project-d145b0df-76c9-4324-a6c` | Proyecto GCP para Vertex AI |
-| `GCP_REGION` | `us-central1` | Región de Vertex AI |
+| Variable | Origen | Valor | Por qué |
+|----------|--------|-------|---------|
+| `GOOGLE_API_KEY` | **Secret Manager** (`google-api-key:latest`) | Cifrado | API key para Gemini 2.5 Flash (LLM) |
+| `USE_VERTEX_AI` | Env var | `true` | Usar Vertex AI para embeddings (text-embedding-004) |
+| `GCP_PROJECT_ID` | Env var | `project-d145b0df-76c9-4324-a6c` | Proyecto GCP para Vertex AI |
+| `GCP_REGION` | Env var | `us-central1` | Región de Vertex AI |
 
-> **Nota:** El `.env` no se copia al contenedor (está en `.dockerignore`). Las variables se pasan
-> como env vars del servicio Cloud Run. En producción, usar **Secret Manager** para la API key.
+> **Nota:** El `.env` no se copia al contenedor (está en `.dockerignore`).
+> La API key se inyecta desde Secret Manager en runtime — nunca queda expuesta en la config.
+> Las demás variables (no sensibles) se pasan como env vars normales.
 
 **Desde la consola GCP (alternativa visual):**
 1. Ve a **Cloud Run → Create Service**
@@ -395,11 +464,16 @@ gcloud run deploy agente-ia-backend \
 5. Authentication: **"Allow unauthenticated invocations"** ✅
 6. En **"Container, Networking, Security"** → pestaña **"Container"**:
    - Port: `8080`
-7. En pestaña **"Variables & Secrets"** → **"+ Add Variable"**:
-   - `GOOGLE_API_KEY` = `(tu API key)`
-   - `USE_VERTEX_AI` = `true`
-   - `GCP_PROJECT_ID` = `project-d145b0df-76c9-4324-a6c`
-   - `GCP_REGION` = `us-central1`
+7. En pestaña **"Variables & Secrets"**:
+   - Click **"+ Add Variable"** (para env vars normales):
+     - `USE_VERTEX_AI` = `true`
+     - `GCP_PROJECT_ID` = `project-d145b0df-76c9-4324-a6c`
+     - `GCP_REGION` = `us-central1`
+   - Click **"+ Reference a Secret"** (para la API key):
+     - Name: `GOOGLE_API_KEY`
+     - Secret: seleccionar `google-api-key`
+     - Version: `latest`
+     - Reference method: **"Exposed as environment variable"**
 8. En pestaña **"Security"**:
    - Service account: `cloudrun-agent-sa@project-d145b0df-76c9-4324-a6c.iam.gserviceaccount.com`
 9. Click **"Create"**
@@ -424,6 +498,33 @@ curl -X POST https://agente-ia-backend-XXXXXXXX-uc.a.run.app/api/chat \
   -H "Content-Type: application/json" \
   -d '{"message": "¿Cuál es la política de teletrabajo?"}'
 ```
+
+#### Rotación de la API key (si se compromete)
+
+Si necesitas rotar la key (por ejemplo, si se expuso en un commit):
+
+**Desde Cloud Shell / terminal:**
+```bash
+# 1. Generar nueva API key en aistudio.google.com/app/apikeys
+# 2. Revocar la key anterior en AI Studio
+# 3. Agregar nueva versión al secreto:
+echo -n "NUEVA_API_KEY" | gcloud secrets versions add google-api-key \
+  --data-file=- \
+  --project=project-d145b0df-76c9-4324-a6c
+
+# 4. Cloud Run usará la nueva versión automáticamente (usa "latest")
+#    Solo necesitas hacer un nuevo deploy o reiniciar las instancias:
+gcloud run services update agente-ia-backend \
+  --region=us-central1 \
+  --project=project-d145b0df-76c9-4324-a6c
+```
+
+**Desde la consola GCP:**
+1. Ve a **Secret Manager → `google-api-key`**
+2. Click **"+ New Version"**
+3. Pega la nueva API key → **"Add New Version"**
+4. (Opcional) Deshabilita o destruye la versión anterior
+5. Ve a **Cloud Run → `agente-ia-backend`** → **"Edit & Deploy New Revision"** → **"Deploy"**
 
 > **⚠️ Sobre la cuota de Vertex AI:** Si el error `429 RESOURCE_EXHAUSTED` persiste en Cloud Run,
 > cambiar `USE_VERTEX_AI=false` en las env vars del servicio. Esto usará Google AI Studio (gratis)
@@ -465,3 +566,4 @@ curl -X POST https://agente-ia-backend-XXXXXXXX-uc.a.run.app/api/chat \
 | `403 Permission Denied` | Cuenta personal sin rol Vertex AI User | Asignar rol a `user:email` + revocar/renovar ADC |
 | `artifacregistry` typo | Error de escritura en API name | `artifactregistry.googleapis.com` (con t) |
 | `429 RESOURCE_EXHAUSTED` embeddings | Cuota de Vertex AI para `textembedding-gecko` agotada | Solicitar aumento de cuota en GCP, o usar `USE_VERTEX_AI=false` (Google AI Studio gratis) |
+| API key expuesta en GitHub | Key hardcodeada en archivo versionado (commit) | Usar `<TU_API_KEY>` en docs. Almacenar keys reales en Secret Manager o `.env` (gitignored). Si se expone: rotar inmediatamente, limpiar historial con `git filter-repo`, y force push |
