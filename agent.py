@@ -36,22 +36,43 @@ def setup_agent():
         AgentExecutor: Agente listo para invocar
     """
 
-    # 1. Configurar LLM (Gemini 2.0 Flash via Google AI Studio)
-    # Usamos siempre ChatGoogleGenerativeAI con API key para el LLM.
-    # Vertex AI se usa solo para embeddings (text-embedding-004) en la ingesta.
-    from langchain_google_genai import ChatGoogleGenerativeAI
-    api_key = os.getenv("GOOGLE_API_KEY")
-    if not api_key:
-        raise ValueError(
-            "⚠️  No se encontró GOOGLE_API_KEY en .env\n"
-            "Por favor, configura: GOOGLE_API_KEY=tu_api_key"
+    # 1. Configurar LLM (Gemini 2.5 Flash)
+    # Dos modos de autenticación según el entorno:
+    #   - USE_VERTEX_AI=true  → Vertex AI (producción en Cloud Run, usa Workload Identity)
+    #   - USE_VERTEX_AI=false → Google AI Studio con API key (desarrollo local, gratis)
+    #
+    # ¿Por qué dos modos?
+    # Google AI Studio tiene un free tier con límite de 20 req/día por modelo.
+    # Vertex AI usa créditos GCP pero no tiene ese rate limit tan agresivo.
+    # En Cloud Run usamos Vertex AI para evitar el error 429 RESOURCE_EXHAUSTED.
+    use_vertex = os.getenv("USE_VERTEX_AI", "true").lower() == "true"
+
+    if use_vertex:
+        # Producción: Vertex AI (autenticación por Workload Identity en Cloud Run,
+        # o por ADC en local con gcloud auth application-default login)
+        from langchain_google_vertexai import ChatVertexAI
+        llm = ChatVertexAI(
+            model_name="gemini-2.5-flash",
+            project=os.getenv("GCP_PROJECT_ID"),
+            location=os.getenv("GCP_REGION", "us-central1"),
+            temperature=0.1,
         )
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash",
-        google_api_key=api_key,
-        temperature=0.1,
-    )
-    print("  🔧 LLM: Gemini 2.0 Flash (Google AI Studio)")
+        print("  LLM: Gemini 2.5 Flash (Vertex AI)")
+    else:
+        # Desarrollo local: Google AI Studio con API key gratuita
+        from langchain_google_genai import ChatGoogleGenerativeAI
+        api_key = os.getenv("GOOGLE_API_KEY")
+        if not api_key:
+            raise ValueError(
+                "No se encontro GOOGLE_API_KEY en .env\n"
+                "Por favor, configura: GOOGLE_API_KEY=tu_api_key"
+            )
+        llm = ChatGoogleGenerativeAI(
+            model="gemini-2.5-flash",
+            google_api_key=api_key,
+            temperature=0.1,
+        )
+        print("  LLM: Gemini 2.5 Flash (Google AI Studio)")
 
     # 2. Memoria de corto plazo (últimos 5 turnos de conversación)
     memory = ConversationBufferWindowMemory(
