@@ -40,6 +40,7 @@ Prerequisitos:
 import gc
 import sys
 import time
+import uuid
 from pathlib import Path
 
 # Agregar directorio raíz al path para imports
@@ -234,8 +235,37 @@ def main():
         docs_dir = DOCS_DIR
         print("\n  Modo local: leyendo PDFs desde docs/corporativos/")
 
-    # 2. Funcion para crear modelo de embeddings (se recrea en cada checkpoint)
-    def crear_embeddings():
+    # 2. Inicializar embeddings con SDK nativo de Vertex AI (mucho mas liviano)
+    # Igual que en la prueba de concepto anterior (main.py) que SI funcionaba
+    import vertexai
+    from vertexai.language_models import TextEmbeddingModel
+    import numpy as np
+    import faiss as faiss_lib
+    from langchain_community.docstore.in_memory import InMemoryDocstore
+
+    print("\n  Inicializando modelo de embeddings (SDK nativo Vertex AI)...")
+    vertexai.init(project=GCP_PROJECT_ID, location=GCP_REGION)
+    embedding_model = TextEmbeddingModel.from_pretrained(EMBEDDING_MODEL)
+
+    # Funcion auxiliar: generar embeddings con reintentos
+    def generar_embeddings_batch(textos, max_retries=7):
+        """Genera embeddings usando SDK nativo con reintentos para rate limits."""
+        for intento in range(max_retries):
+            try:
+                results = embedding_model.get_embeddings(textos)
+                return [r.values for r in results]
+            except Exception as e:
+                if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
+                    espera = min(2 ** (intento + 1), 60)
+                    print(f"    Rate limit, reintentando en {espera}s... ({intento+1}/{max_retries})")
+                    time.sleep(espera)
+                else:
+                    raise
+        print(f"    WARN: No se pudo generar embeddings tras {max_retries} intentos")
+        return None
+
+    # Funcion para crear LangChain embeddings (solo para cargar FAISS desde disco)
+    def crear_embeddings_langchain():
         if USE_VERTEX_AI:
             from langchain_google_vertexai import VertexAIEmbeddings
             return VertexAIEmbeddings(
@@ -250,9 +280,6 @@ def main():
                 google_api_key=GOOGLE_API_KEY,
             )
 
-    print("\n  Inicializando modelo de embeddings...")
-    embeddings = crear_embeddings()
-
     # 3. Buscar PDFs
     pdfs = sorted(docs_dir.rglob("*.pdf"))
     if not pdfs:
@@ -261,7 +288,6 @@ def main():
     print(f"\n  Encontrados {len(pdfs)} PDFs")
 
     # 3b. Intentar reanudar desde checkpoint previo en GCS
-    # Si el Job fue terminado (OOM) y reintentado, el checkpoint esta en GCS
     vectorstore = None
     pdfs_ya_procesados = set()
 
@@ -271,107 +297,103 @@ def main():
         faiss_file = FAISS_INDEX_DIR / "index.faiss"
         if not faiss_file.exists():
             print("\n  Buscando checkpoint previo en GCS...")
+            lc_emb = crear_embeddings_langchain()
             exito = descargar_vectorstore_desde_gcs(GCS_BUCKET_NAME, GCS_VECTORSTORE_PREFIX, FAISS_INDEX_DIR)
             if exito:
                 vectorstore = FAISS.load_local(
-                    str(FAISS_INDEX_DIR), embeddings,
+                    str(FAISS_INDEX_DIR), lc_emb,
                     allow_dangerous_deserialization=True
                 )
-                # Obtener nombres de PDFs ya indexados desde metadata
                 for doc_id in vectorstore.docstore._dict.values():
                     if hasattr(doc_id, 'metadata') and 'fuente' in doc_id.metadata:
                         pdfs_ya_procesados.add(doc_id.metadata['fuente'])
                 print(f"  Checkpoint recuperado: {vectorstore.index.ntotal} vectores, {len(pdfs_ya_procesados)} PDFs previos")
-                print(f"  PDFs ya procesados: {pdfs_ya_procesados}")
+            del lc_emb
+            gc.collect()
 
-    # 4. Procesar PDF por PDF (bajo consumo de RAM)
+    # 4. Procesar PDF por PDF usando SDK nativo (bajo consumo de RAM)
     print("\n" + "=" * 65)
-    print("  Procesando PDF por PDF (fragmentar + embeddings + FAISS)")
+    print("  Procesando PDF por PDF (SDK nativo Vertex AI)")
     print("=" * 65)
 
     total_fragmentos = 0
     total_pdfs = 0
     categorias = {}
     inicio = time.time()
-    CHECKPOINT_CADA = 1  # Guardar a disco despues de CADA PDF para liberar RAM
 
     for idx, pdf in enumerate(pdfs, 1):
-        # Saltar PDFs ya procesados (reanudacion desde checkpoint)
         if pdf.name in pdfs_ya_procesados:
             print(f"  [{idx}/{len(pdfs)}] {pdf.name}: SKIP (ya procesado)")
             continue
 
         try:
-            # Fragmentar este PDF
             fragmentos = procesar_pdf(pdf)
             if not fragmentos:
                 print(f"  [{idx}/{len(pdfs)}] {pdf.name}: 0 fragmentos (vacio)")
                 continue
 
-            # Convertir a Documents de LangChain
             documentos = crear_documentos_langchain(fragmentos)
-            del fragmentos  # Liberar fragmentos crudos inmediatamente
+            del fragmentos
 
-            # Contar por categoría
             for doc in documentos:
                 cat = doc.metadata["categoria"]
                 categorias[cat] = categorias.get(cat, 0) + 1
 
-            # Generar embeddings y agregar al indice FAISS
+            # Generar embeddings con SDK nativo (lote por lote)
             BATCH_SIZE = 3
-            MAX_RETRIES = 7
             for i in range(0, len(documentos), BATCH_SIZE):
                 lote = documentos[i:i + BATCH_SIZE]
-                for intento in range(MAX_RETRIES):
-                    try:
-                        if vectorstore is None:
-                            vectorstore = FAISS.from_documents(lote, embeddings)
-                        else:
-                            vectorstore.add_documents(lote)
-                        break  # Exito, salir del retry
-                    except Exception as e:
-                        if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
-                            espera = min(2 ** (intento + 1), 60)
-                            print(f"    Rate limit, reintentando en {espera}s... ({intento+1}/{MAX_RETRIES})")
-                            time.sleep(espera)
-                        else:
-                            raise
+                textos = [d.page_content for d in lote]
+                vectors = generar_embeddings_batch(textos)
+
+                if vectors is None:
+                    continue
+
+                # Agregar al indice FAISS manualmente (sin wrapper LangChain)
+                if vectorstore is None:
+                    # Crear FAISS index desde cero
+                    dim = len(vectors[0])
+                    index = faiss_lib.IndexFlatL2(dim)
+                    index.add(np.array(vectors, dtype=np.float32))
+                    # Crear docstore y mapping
+                    docstore = InMemoryDocstore()
+                    index_to_id = {}
+                    for j, doc in enumerate(lote):
+                        doc_id = str(uuid.uuid4())
+                        docstore.add({doc_id: doc})
+                        index_to_id[j] = doc_id
+                    vectorstore = FAISS(
+                        embedding_function=crear_embeddings_langchain(),
+                        index=index,
+                        docstore=docstore,
+                        index_to_docstore_id=index_to_id,
+                    )
                 else:
-                    print(f"    WARN: No se pudo procesar lote tras {MAX_RETRIES} intentos")
-                time.sleep(5)  # Pausa de 5s entre lotes
+                    # Agregar a FAISS existente
+                    start_idx = vectorstore.index.ntotal
+                    vectorstore.index.add(np.array(vectors, dtype=np.float32))
+                    for j, doc in enumerate(lote):
+                        doc_id = str(uuid.uuid4())
+                        vectorstore.docstore.add({doc_id: doc})
+                        vectorstore.index_to_docstore_id[start_idx + j] = doc_id
+
+                time.sleep(5)  # Pausa entre lotes
 
             total_fragmentos += len(documentos)
             total_pdfs += 1
             print(f"  [{idx}/{len(pdfs)}] {pdf.name}: {len(documentos)} fragmentos OK")
 
-            # Liberar memoria
             del documentos
             gc.collect()
 
-            # Checkpoint: guardar a disco + GCS, recrear embeddings
-            if total_pdfs % CHECKPOINT_CADA == 0 and vectorstore is not None:
-                print(f"  ** Checkpoint: guardando indice parcial ({total_fragmentos} fragmentos)...")
+            # Checkpoint despues de cada PDF: guardar a disco + GCS
+            if vectorstore is not None:
+                print(f"  ** Checkpoint: guardando ({vectorstore.index.ntotal} vectores)...")
                 FAISS_INDEX_DIR.mkdir(parents=True, exist_ok=True)
                 vectorstore.save_local(str(FAISS_INDEX_DIR))
-
-                # Subir checkpoint a GCS (para reanudacion si hay OOM)
                 if GCS_BUCKET_NAME:
                     subir_vectorstore_a_gcs(GCS_BUCKET_NAME, GCS_VECTORSTORE_PREFIX, FAISS_INDEX_DIR)
-
-                # Liberar TODO: vectorstore + embeddings (libera caches internas)
-                del vectorstore, embeddings
-                gc.collect()
-                time.sleep(2)
-
-                # Recrear embeddings (objeto fresco, sin cache acumulada)
-                embeddings = crear_embeddings()
-
-                # Recargar vectorstore desde disco
-                vectorstore = FAISS.load_local(
-                    str(FAISS_INDEX_DIR), embeddings,
-                    allow_dangerous_deserialization=True
-                )
-                print(f"  ** Checkpoint OK, continuando...")
+                print(f"  ** Checkpoint OK")
 
         except Exception as e:
             print(f"  [{idx}/{len(pdfs)}] {pdf.name}: ERROR - {e}")
@@ -394,14 +416,15 @@ def main():
         print(f"\n  Subiendo indice FAISS a gs://{GCS_BUCKET_NAME}/{GCS_VECTORSTORE_PREFIX}...")
         subir_vectorstore_a_gcs(GCS_BUCKET_NAME, GCS_VECTORSTORE_PREFIX, FAISS_INDEX_DIR)
 
-    # 6. Prueba rápida (recargar desde disco para liberar RAM del vectorstore grande)
+    # 6. Prueba rápida (recargar desde disco)
     print("\n" + "=" * 65)
     print("  Prueba rapida de busqueda semantica")
     print("=" * 65)
     del vectorstore
     gc.collect()
+    lc_emb = crear_embeddings_langchain()
     vectorstore = FAISS.load_local(
-        str(FAISS_INDEX_DIR), embeddings,
+        str(FAISS_INDEX_DIR), lc_emb,
         allow_dangerous_deserialization=True
     )
     query_test = "politica de seguridad de la informacion"
