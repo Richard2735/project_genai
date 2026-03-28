@@ -110,23 +110,12 @@ def inicializar_docai():
     return client, processor_name
 
 
-def extraer_texto_docai(client, processor_name, pdf_bytes):
+def _procesar_documento_docai(client, processor_name, pdf_bytes):
     """
-    Extrae texto de un PDF usando Document AI.
-
-    Replica la logica del POC (main.py):
-    - Ordena parrafos por indice natural de lectura
-    - Filtra headers/footers por posicion Y
-    - Detecta subtitulos (mayusculas o terminan en ':')
-    - Limpia saltos de linea internos
-
-    Args:
-        client: Cliente DocumentProcessorServiceClient
-        processor_name: Ruta completa del procesador
-        pdf_bytes: Contenido binario del PDF
+    Envia un PDF (<=30 paginas) a Document AI y extrae texto estructurado.
 
     Returns:
-        str: Texto extraido y limpio del PDF
+        str: Texto extraido y limpio
     """
     raw_document = documentai.RawDocument(
         content=pdf_bytes, mime_type="application/pdf"
@@ -137,17 +126,14 @@ def extraer_texto_docai(client, processor_name, pdf_bytes):
     response = client.process_document(request=request)
     document = response.document
 
-    # Extraer texto estructurado (misma logica que el POC)
     textos = []
     for page in document.pages:
-        # Ordenar parrafos por indice natural de lectura
         paragraphs_sorted = sorted(
             page.paragraphs,
             key=lambda p: _get_paragraph_start_index(p)
         )
 
         for paragraph in paragraphs_sorted:
-            # Filtrar headers y footers
             if _is_header_footer(paragraph):
                 continue
 
@@ -155,12 +141,64 @@ def extraer_texto_docai(client, processor_name, pdf_bytes):
             if not text or len(text) <= 1:
                 continue
 
-            # Limpiar saltos de linea y caracteres especiales
             text = text.replace('\n', ' ')
             text = text.replace('•', '')
             textos.append(text)
 
     return "\n".join(textos)
+
+
+def extraer_texto_docai(client, processor_name, pdf_bytes):
+    """
+    Extrae texto de un PDF usando Document AI.
+
+    Si el PDF tiene mas de 30 paginas (limite de Document AI Free),
+    lo divide en partes de 30 paginas y procesa cada parte por separado.
+
+    Args:
+        client: Cliente DocumentProcessorServiceClient
+        processor_name: Ruta completa del procesador
+        pdf_bytes: Contenido binario del PDF
+
+    Returns:
+        str: Texto extraido y limpio del PDF
+    """
+    from io import BytesIO
+    from pypdf import PdfReader, PdfWriter
+
+    DOCAI_PAGE_LIMIT = 30
+
+    # Verificar numero de paginas
+    reader = PdfReader(BytesIO(pdf_bytes))
+    total_pages = len(reader.pages)
+
+    if total_pages <= DOCAI_PAGE_LIMIT:
+        # PDF dentro del limite, procesar directamente
+        return _procesar_documento_docai(client, processor_name, pdf_bytes)
+
+    # PDF excede el limite: dividir en partes de 30 paginas
+    print(f"    PDF grande ({total_pages} pags), dividiendo en partes de {DOCAI_PAGE_LIMIT}...")
+    textos_partes = []
+
+    for start in range(0, total_pages, DOCAI_PAGE_LIMIT):
+        end = min(start + DOCAI_PAGE_LIMIT, total_pages)
+        writer = PdfWriter()
+        for page_num in range(start, end):
+            writer.add_page(reader.pages[page_num])
+
+        # Serializar la parte a bytes
+        buffer = BytesIO()
+        writer.write(buffer)
+        parte_bytes = buffer.getvalue()
+
+        print(f"    Procesando paginas {start+1}-{end}...")
+        texto_parte = _procesar_documento_docai(client, processor_name, parte_bytes)
+        textos_partes.append(texto_parte)
+
+        del writer, buffer, parte_bytes
+        gc.collect()
+
+    return "\n".join(textos_partes)
 
 
 def _get_text(document, text_anchor):
