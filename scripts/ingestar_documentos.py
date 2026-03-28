@@ -61,8 +61,10 @@ from google.cloud import documentai
 from google.cloud import storage
 from google.api_core.client_options import ClientOptions
 
-# Google AI Studio — Embeddings ligeros (~50 MB vs ~6 GB de Vertex AI SDK)
-import google.generativeai as genai
+# Vertex AI — Embeddings via SDK nativo (TextEmbeddingModel)
+# Importamos solo el modulo necesario, no todo google-cloud-aiplatform
+import vertexai
+from vertexai.language_models import TextEmbeddingModel
 
 # Intentar cargar .env si existe (desarrollo local)
 try:
@@ -86,7 +88,7 @@ DOCAI_LOCATION = os.environ.get("DOCAI_LOCATION", "us")
 
 CHUNK_SIZE = int(os.environ.get("CHUNK_SIZE", "500"))
 CHUNK_OVERLAP = int(os.environ.get("CHUNK_OVERLAP", "100"))
-EMBEDDING_MODEL = "models/text-embedding-004"
+EMBEDDING_MODEL = "text-embedding-004"
 EMBEDDING_DIM = 768
 BATCH_SIZE = 5  # Fragmentos por llamada a la API de embeddings
 PAUSE_BETWEEN_BATCHES = 2  # Segundos entre lotes de embeddings
@@ -243,15 +245,19 @@ def clasificar_pdf(nombre):
 # Embeddings — Google AI Studio (ligero)
 # ============================================================
 
-def generar_embeddings_batch(textos, max_retries=7):
+def generar_embeddings_batch(textos, embedding_model, max_retries=7):
     """
-    Genera embeddings con google.generativeai (SDK ligero).
+    Genera embeddings con Vertex AI SDK nativo (TextEmbeddingModel).
+
+    Usa el mismo modelo (text-embedding-004) que el backend para
+    mantener consistencia en el espacio vectorial.
 
     Incluye reintentos con backoff exponencial para rate limits (429).
     Cada texto se convierte en un vector de 768 dimensiones.
 
     Args:
         textos: Lista de strings a vectorizar
+        embedding_model: Instancia de TextEmbeddingModel
         max_retries: Intentos maximos ante rate limits
 
     Returns:
@@ -259,14 +265,8 @@ def generar_embeddings_batch(textos, max_retries=7):
     """
     for intento in range(max_retries):
         try:
-            vectors = []
-            for texto in textos:
-                result = genai.embed_content(
-                    model=EMBEDDING_MODEL,
-                    content=texto
-                )
-                vectors.append(result["embedding"])
-            return vectors
+            results = embedding_model.get_embeddings(textos)
+            return [r.values for r in results]
         except Exception as e:
             if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
                 espera = min(2 ** (intento + 1), 60)
@@ -401,8 +401,6 @@ def main():
 
     # --- Validar configuracion ---
     errores = []
-    if not GOOGLE_API_KEY:
-        errores.append("GOOGLE_API_KEY")
     if not GCS_BUCKET_NAME:
         errores.append("GCS_BUCKET_NAME")
     if not DOCAI_PROCESSOR_ID:
@@ -416,12 +414,13 @@ def main():
     print(f"  Proyecto:      {GCP_PROJECT_ID}")
     print(f"  Bucket:        gs://{GCS_BUCKET_NAME}")
     print(f"  Document AI:   {DOCAI_LOCATION}/{DOCAI_PROCESSOR_ID}")
-    print(f"  Embeddings:    {EMBEDDING_MODEL} (Google AI Studio)")
+    print(f"  Embeddings:    {EMBEDDING_MODEL} (Vertex AI nativo)")
     print(f"  Chunk size:    {CHUNK_SIZE} chars, overlap {CHUNK_OVERLAP}")
 
     # --- Inicializar clientes ---
     print("\n  Inicializando clientes...")
-    genai.configure(api_key=GOOGLE_API_KEY)
+    vertexai.init(project=GCP_PROJECT_ID, location=GCP_REGION)
+    embedding_model = TextEmbeddingModel.from_pretrained(EMBEDDING_MODEL)
     gcs_client = storage.Client()
     docai_client, processor_name = inicializar_docai()
     print("  Clientes inicializados OK")
@@ -516,7 +515,7 @@ def main():
             for i in range(0, len(documentos), BATCH_SIZE):
                 lote = documentos[i:i + BATCH_SIZE]
                 textos = [d.page_content for d in lote]
-                vectors = generar_embeddings_batch(textos)
+                vectors = generar_embeddings_batch(textos, embedding_model)
 
                 if vectors is None:
                     continue
