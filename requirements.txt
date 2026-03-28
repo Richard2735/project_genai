@@ -25,6 +25,9 @@ google-auth-httplib2>=0.2.0
 # Google Cloud Platform — Vertex AI
 google-cloud-aiplatform>=1.60.0
 
+# Google Cloud Storage — PDFs y vectorstore en GCS
+google-cloud-storage>=2.14.0
+
 # API REST (FastAPI + Uvicorn para Cloud Run)
 fastapi>=0.104.0
 uvicorn>=0.24.0

@@ -58,6 +58,9 @@ from config.settings import (
     EMBEDDING_MODEL,
     CHUNK_SIZE,
     CHUNK_OVERLAP,
+    GCS_BUCKET_NAME,
+    GCS_PDFS_PREFIX,
+    GCS_VECTORSTORE_PREFIX,
     imprimir_estado,
 )
 from tools.pdf_processor import procesar_pdf
@@ -217,6 +220,20 @@ def main():
             sys.exit(1)
         print("  Modo: Google AI Studio (API key gratuita)")
 
+    # 1b. Si hay bucket GCS configurado, descargar PDFs de GCS a /tmp
+    if GCS_BUCKET_NAME:
+        import tempfile
+        from utils.gcs_helpers import descargar_pdfs_desde_gcs
+        print(f"\n  Bucket GCS: gs://{GCS_BUCKET_NAME}/{GCS_PDFS_PREFIX}")
+        docs_dir = Path(tempfile.mkdtemp()) / "corporativos"
+        n_descargados = descargar_pdfs_desde_gcs(GCS_BUCKET_NAME, GCS_PDFS_PREFIX, docs_dir)
+        if n_descargados == 0:
+            print("ERROR: No hay PDFs en el bucket GCS")
+            sys.exit(1)
+    else:
+        docs_dir = DOCS_DIR
+        print("\n  Modo local: leyendo PDFs desde docs/corporativos/")
+
     # 2. Inicializar modelo de embeddings (una sola vez)
     print("\n  Inicializando modelo de embeddings...")
     if USE_VERTEX_AI:
@@ -234,7 +251,7 @@ def main():
         )
 
     # 3. Buscar PDFs
-    pdfs = sorted(DOCS_DIR.rglob("*.pdf"))
+    pdfs = sorted(docs_dir.rglob("*.pdf"))
     if not pdfs:
         print("ERROR: No hay PDFs en docs/corporativos/")
         sys.exit(1)
@@ -335,6 +352,12 @@ def main():
     print("  Guardando indice FAISS en disco")
     print("=" * 65)
     persistir_indice(vectorstore, FAISS_INDEX_DIR)
+
+    # 5b. Si hay bucket GCS, subir el indice FAISS al bucket
+    if GCS_BUCKET_NAME:
+        from utils.gcs_helpers import subir_vectorstore_a_gcs
+        print(f"\n  Subiendo indice FAISS a gs://{GCS_BUCKET_NAME}/{GCS_VECTORSTORE_PREFIX}...")
+        subir_vectorstore_a_gcs(GCS_BUCKET_NAME, GCS_VECTORSTORE_PREFIX, FAISS_INDEX_DIR)
 
     # 6. Prueba rápida (recargar desde disco para liberar RAM del vectorstore grande)
     print("\n" + "=" * 65)

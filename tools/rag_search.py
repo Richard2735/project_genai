@@ -35,6 +35,8 @@ from config.settings import (
     EMBEDDING_MODEL,
     FAISS_INDEX_DIR,
     RAG_TOP_K,
+    GCS_BUCKET_NAME,
+    GCS_VECTORSTORE_PREFIX,
 )
 
 # ========================================
@@ -110,8 +112,22 @@ def _cargar_vectorstore():
     if _vectorstore_cache is not None:
         return _vectorstore_cache
 
-    # Verificar si existe el indice FAISS en disco
+    # Si hay bucket GCS configurado y no hay indice local, descargarlo de GCS
     faiss_file = FAISS_INDEX_DIR / "index.faiss"
+    if not faiss_file.exists() and GCS_BUCKET_NAME:
+        try:
+            from utils.gcs_helpers import descargar_vectorstore_desde_gcs
+            print(f"[RAG] Descargando indice FAISS desde gs://{GCS_BUCKET_NAME}/{GCS_VECTORSTORE_PREFIX}...")
+            FAISS_INDEX_DIR.mkdir(parents=True, exist_ok=True)
+            exito = descargar_vectorstore_desde_gcs(GCS_BUCKET_NAME, GCS_VECTORSTORE_PREFIX, FAISS_INDEX_DIR)
+            if exito:
+                print("[RAG] Indice FAISS descargado de GCS exitosamente")
+            else:
+                print("[RAG] No se encontro indice FAISS en GCS")
+        except Exception as e:
+            print(f"[RAG] Error descargando de GCS: {e}")
+
+    # Verificar si existe el indice FAISS en disco (local o descargado de GCS)
     if not faiss_file.exists():
         print("[RAG] No se encontro indice FAISS en vectorstore/")
         print("[RAG] Usando fallback: busqueda por keywords (mock)")

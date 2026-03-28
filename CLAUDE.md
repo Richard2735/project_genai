@@ -69,6 +69,8 @@ El agente combina dos iniciativas internas de la consultora:
 | **Embeddings** | text-embedding-004 (Vertex AI) | Vectorización de documentos para RAG |
 | **Framework** | LangChain (`langchain_classic` 1.0.3) | Agente, tools, cadenas RAG, memoria |
 | **Vector Store** | FAISS | Almacenamiento y búsqueda de embeddings |
+| **Object Storage** | Cloud Storage (GCS) | PDFs corporativos + índice FAISS persistido |
+| **Batch Processing** | Cloud Run Jobs | Ingesta masiva de documentos (2GB RAM, 30min) |
 | **Backend API** | FastAPI + Uvicorn | API REST del agente como microservicio |
 | **Frontend** | Next.js / React | Interfaz de consulta web |
 | **Documentos** | Google Drive API v3 + Service Account | Descarga automática de PDFs corporativos |
@@ -106,8 +108,11 @@ project_genai/
 ├── scripts/
 │   ├── descargar_pdfs.py  ← Descarga PDFs desde Google Drive
 │   └── ingestar_documentos.py ← ✅ Pipeline de ingesta RAG (optimizado para bajo RAM)
+├── utils/
+│   ├── __init__.py
+│   └── gcs_helpers.py     ← Utilidades GCS (descarga PDFs, sube/baja vectorstore)
 ├── config/
-│   └── settings.py        ← Configuración centralizada del proyecto
+│   └── settings.py        ← Configuración centralizada del proyecto (incluye GCS)
 ├── credentials/           ← Service Account JSON (gitignored)
 ├── vectorstore/           ← Índice FAISS persistido (gitignored, se genera con ingesta)
 ├── docs/
@@ -130,33 +135,66 @@ project_genai/
 
 ---
 
-## Arquitectura del sistema (Microservicios)
+## Arquitectura del sistema (Producción)
 
 ```
 ┌─────────────────────┐     HTTPS      ┌──────────────────────────────┐
-│   Frontend (Vercel)  │ ──────────────▶│   Backend API (Cloud Run)    │
-│   Next.js / React    │◀──────────────│   FastAPI + LangChain Agent  │
+│   Frontend (Vercel)  │ ──────────────▶│  Cloud Run Service           │
+│   Next.js / React    │◀──────────────│  agente-ia-backend           │
 │                      │               │                              │
 │ • Caja de texto      │               │ • POST /api/chat             │
 │ • Respuesta modelo   │               │ • POST /api/ingest           │
 │ • Historial chat     │               │ • GET  /api/health           │
 └─────────────────────┘               │                              │
-                                       │   AgentExecutor (ReAct)      │
-                                       │   ├── Gemini 2.5 Flash       │
-                                       │   ├── Memoria (k=5)          │
-                                       │   └── Tools:                 │
-                                       │        ├── data_prep_tool    │
-                                       │        ├── rag_search_tool   │
-                                       │        └── dlp_anonymizer    │
+                                       │  AgentExecutor (ReAct)       │
+                                       │  ├── Gemini 2.5 Flash        │
+                                       │  ├── Memoria (k=5)           │
+                                       │  └── Tools:                  │
+                                       │       ├── data_prep_tool     │
+                                       │       ├── rag_search_tool    │
+                                       │       └── dlp_anonymizer     │
                                        │                              │
-                                       │   Pipeline RAG               │
-                                       │   ├── PDF Loader (Drive)     │
-                                       │   ├── Text Splitter          │
-                                       │   ├── Embeddings (Gemini)    │
-                                       │   ├── Vector Store (FAISS)   │
-                                       │   └── Metadata Filters       │
+                                       │  Al iniciar:                 │
+                                       │  GCS → descarga FAISS index  │
+                                       │  → carga en memoria          │
+                                       └──────────┬───────────────────┘
+                                                  │ lee vectorstore/
+                                                  ▼
+                                       ┌──────────────────────────────┐
+                                       │  Cloud Storage (GCS)         │
+                                       │  genai-docs-{PROJECT_ID}     │
+                                       │                              │
+                                       │  /pdfs/POLITICAS/*.pdf       │
+                                       │  /pdfs/PROCEDIMIENTOS/*.pdf  │
+                                       │  /pdfs/REGLAMENTOS/*.pdf     │
+                                       │  /vectorstore/index.faiss    │
+                                       │  /vectorstore/index.pkl      │
+                                       └──────────┬───────────────────┘
+                                                  ▲ escribe vectorstore/
+                                                  │ lee pdfs/
+                                       ┌──────────┴───────────────────┐
+                                       │  Cloud Run Job               │
+                                       │  ingesta-rag-job             │
+                                       │  (2 GB RAM, 2 vCPU, 30m)    │
+                                       │                              │
+                                       │  1. Descarga PDFs de GCS     │
+                                       │  2. Fragmenta texto          │
+                                       │  3. Genera embeddings        │
+                                       │     (Vertex AI text-emb-004) │
+                                       │  4. Construye índice FAISS   │
+                                       │  5. Sube índice a GCS        │
                                        └──────────────────────────────┘
 ```
+
+### Principios de la arquitectura
+
+| Principio | Implementación |
+|---|---|
+| **Stateless containers** | Contenedores no guardan estado; todo persiste en GCS |
+| **Separación compute/storage** | PDFs e índice en GCS, procesamiento en Cloud Run |
+| **Mínimo privilegio** | SA `cloudrun-agent-sa` con solo los roles necesarios |
+| **Inmutabilidad** | Imágenes Docker versionadas en Artifact Registry |
+| **Batch vs Serving** | Job para ingesta pesada, Service para consultas en tiempo real |
 
 ---
 
@@ -303,7 +341,9 @@ Credenciales: carpeta `credentials/` (gitignored). Usar Service Account con perm
 | Despliegue Cloud Run | ✅ Desplegado | `agente-ia-backend` con Vertex AI, Secret Manager, SA dedicada |
 | Frontend (Next.js) | ✅ Desplegado | `https://project-genai.vercel.app/` con chat, sesiones, sugerencias |
 | CORS | ✅ Configurado | `ALLOWED_ORIGINS` apunta a dominio Vercel |
-| Pipeline RAG (ingesta) | 🔄 En progreso | Script optimizado (bajo RAM, reintentos), pendiente ejecución completa en Cloud Shell |
+| Cloud Storage (GCS) | ✅ Implementado | Bucket para PDFs y vectorstore, helpers en `utils/gcs_helpers.py` |
+| Cloud Run Job (ingesta) | ✅ Implementado | `ingesta-rag-job` — 2GB RAM, lee GCS, genera FAISS, sube a GCS |
+| Pipeline RAG (ingesta) | 🔄 En progreso | Script listo con GCS + reintentos, pendiente ejecución del Job |
 | HyDE | ⬜ Pendiente (Opcional) | Hypothetical Document Embeddings |
 | README final | ⬜ Pendiente | Descripción, stack, instrucciones |
 

@@ -43,6 +43,15 @@ GCP_REGION = os.getenv("GCP_REGION", "us-central1")
 USE_VERTEX_AI = os.getenv("USE_VERTEX_AI", "true").lower() == "true"
 
 # ================================
+# Google Cloud Storage — PDFs y Vectorstore
+# ================================
+# Bucket donde se almacenan los PDFs corporativos y el indice FAISS
+# Si esta vacio, se usan los archivos locales (docs/corporativos/ y vectorstore/)
+GCS_BUCKET_NAME = os.getenv("GCS_BUCKET_NAME", "")
+GCS_PDFS_PREFIX = os.getenv("GCS_PDFS_PREFIX", "pdfs/")
+GCS_VECTORSTORE_PREFIX = os.getenv("GCS_VECTORSTORE_PREFIX", "vectorstore/")
+
+# ================================
 # Configuración del agente
 # ================================
 LLM_MODEL = os.getenv("LLM_MODEL", "gemini-1.5-flash")
@@ -66,7 +75,8 @@ RAG_TOP_K = int(os.getenv("RAG_TOP_K", "3"))
 _DEFAULT_EMBEDDING = "text-embedding-004" if USE_VERTEX_AI else "models/embedding-001"
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", _DEFAULT_EMBEDDING)
 # Directorio donde se persiste el índice FAISS a disco
-FAISS_INDEX_DIR = PROJECT_ROOT / "vectorstore"
+# En Cloud Run se usa /tmp/vectorstore (filesystem efimero pero escribible)
+FAISS_INDEX_DIR = Path(os.getenv("FAISS_INDEX_DIR", str(PROJECT_ROOT / "vectorstore")))
 
 # ================================
 # Drive API Scopes

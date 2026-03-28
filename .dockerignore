@@ -74,6 +74,11 @@ frontend/
 test_agent.py
 
 # ============================
+# Vector Store (se descarga de GCS en runtime)
+# ============================
+vectorstore/
+
+# ============================
 # Archivos innecesarios en producción
 # ============================
 *.bak

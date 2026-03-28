@@ -15,7 +15,8 @@ gcloud services enable \
   artifactregistry.googleapis.com \
   dlp.googleapis.com \
   secretmanager.googleapis.com \
-  iam.googleapis.com
+  iam.googleapis.com \
+  storage.googleapis.com
 ```
 
 #### Desde la consola GCP
@@ -35,6 +36,7 @@ gcloud services enable \
 | `dlp.googleapis.com` | Cloud DLP | Anonimización de PII (producción) |
 | `secretmanager.googleapis.com` | Secret Manager | Almacenar API keys y credenciales |
 | `iam.googleapis.com` | IAM | Gestión de roles y service accounts |
+| `storage.googleapis.com` | Cloud Storage | Almacenamiento de PDFs e índice FAISS |
 
 ---
 
@@ -803,6 +805,190 @@ origin main               │
 
 > Sin el **trigger** → habría que construir la imagen manualmente con `gcloud builds submit` cada vez.
 > Sin el **repositorio** → la imagen no tendría dónde guardarse y Cloud Run no podría descargarla.
+
+---
+
+## Cloud Storage — Bucket para PDFs y Vectorstore
+
+### ¿Por qué Cloud Storage?
+
+En una arquitectura de producción como Data Engineer, los datos de entrada (PDFs) y los artefactos generados (índice FAISS) deben vivir en **almacenamiento persistente y compartido**, no en el filesystem local de un contenedor efímero.
+
+GCS actúa como la **fuente de verdad** (source of truth):
+- Los PDFs se suben una vez al bucket y quedan disponibles para cualquier servicio
+- El Cloud Run Job lee de ahí, genera el índice, y lo sube de vuelta
+- El Cloud Run Service descarga el índice al arrancar
+
+Esto sigue el principio de **stateless containers**: los contenedores no guardan estado, todo el estado está en GCS.
+
+### Crear el bucket y subir PDFs
+
+```bash
+PROJECT_ID="project-d145b0df-76c9-4324-a6c"
+REGION="us-central1"
+BUCKET_NAME="genai-docs-${PROJECT_ID}"
+
+# 1. Crear bucket con acceso uniforme y prevención de acceso público
+gcloud storage buckets create "gs://${BUCKET_NAME}" \
+  --location="${REGION}" \
+  --uniform-bucket-level-access \
+  --public-access-prevention
+
+# 2. Subir PDFs preservando estructura de directorios
+gcloud storage cp -r docs/corporativos/POLITICAS/ "gs://${BUCKET_NAME}/pdfs/POLITICAS/"
+gcloud storage cp -r docs/corporativos/PROCEDIMIENTOS/ "gs://${BUCKET_NAME}/pdfs/PROCEDIMIENTOS/"
+gcloud storage cp -r docs/corporativos/REGLAMENTOS/ "gs://${BUCKET_NAME}/pdfs/REGLAMENTOS/"
+
+# 3. Verificar contenido
+gcloud storage ls "gs://${BUCKET_NAME}/pdfs/" --recursive
+```
+
+### Seguridad del bucket
+
+| Configuración | Valor | Por qué |
+|---|---|---|
+| `uniform-bucket-level-access` | Habilitado | Todo el control de acceso se maneja por IAM, no por ACLs individuales |
+| `public-access-prevention` | Habilitado | Impide que alguien haga público un objeto por error |
+| Acceso | Solo `cloudrun-agent-sa` | Mínimo privilegio: solo la SA de producción puede leer/escribir |
+
+### Permisos IAM para el bucket
+
+```bash
+SA_EMAIL="cloudrun-agent-sa@${PROJECT_ID}.iam.gserviceaccount.com"
+
+# Otorgar Storage Object Admin en el bucket
+gcloud storage buckets add-iam-policy-binding "gs://${BUCKET_NAME}" \
+  --member="serviceAccount:${SA_EMAIL}" \
+  --role="roles/storage.objectAdmin"
+```
+
+**¿Por qué `objectAdmin` y no `objectViewer`?** Porque la misma SA se usa tanto para el Cloud Run Service (que solo lee) como para el Cloud Run Job (que escribe el índice FAISS). En producción real, se usarían SAs separadas.
+
+### Estructura del bucket
+
+```
+gs://genai-docs-{PROJECT_ID}/
+├── pdfs/                          ← Documentos fuente (inmutables)
+│   ├── POLITICAS/
+│   │   ├── Codigo de Etica y conducta.pdf
+│   │   ├── Politica - Teletrabajo.pdf
+│   │   └── ...
+│   ├── PROCEDIMIENTOS/
+│   │   └── ...
+│   └── REGLAMENTOS/
+│       └── ...
+└── vectorstore/                   ← Artefacto generado por el Job
+    ├── index.faiss               (~5-15 MB)
+    └── index.pkl                 (~1-5 MB)
+```
+
+---
+
+## Cloud Run Job — Pipeline de Ingesta RAG
+
+### ¿Qué es un Cloud Run Job?
+
+A diferencia de un **Cloud Run Service** (que escucha peticiones HTTP continuamente), un **Cloud Run Job** ejecuta una tarea hasta completarla y luego se detiene. Ideal para:
+- Procesamiento por lotes (batch)
+- Pipelines de datos (ETL/ELT)
+- Tareas programadas (cron)
+
+**No paga por tiempo idle** — solo paga mientras ejecuta.
+
+### ¿Por qué un Job para la ingesta?
+
+| Aspecto | Cloud Shell | Cloud Run Job |
+|---|---|---|
+| RAM | ~1.7 GB (fija) | Hasta 32 GB (configurable) |
+| Auth | ADC manual (expira) | Workload Identity (automática) |
+| Timeout | 20 min (se desconecta) | Hasta 24 horas |
+| Reproducibilidad | Manual, depende de sesión | Misma imagen Docker, mismo resultado |
+| Gobernanza | Sin auditoría | Logs en Cloud Logging, ejecutable por SA |
+
+### Crear el Cloud Run Job
+
+```bash
+PROJECT_ID="project-d145b0df-76c9-4324-a6c"
+REGION="us-central1"
+BUCKET_NAME="genai-docs-${PROJECT_ID}"
+IMAGE="us-central1-docker.pkg.dev/${PROJECT_ID}/agente-ia-repo/agente-ia-backend"
+
+# Crear el Job (usa la misma imagen Docker del backend)
+gcloud run jobs create ingesta-rag-job \
+  --image="${IMAGE}" \
+  --region="${REGION}" \
+  --service-account="cloudrun-agent-sa@${PROJECT_ID}.iam.gserviceaccount.com" \
+  --memory="2Gi" \
+  --cpu="2" \
+  --task-timeout="30m" \
+  --max-retries=1 \
+  --set-env-vars="USE_VERTEX_AI=true,GCP_PROJECT_ID=${PROJECT_ID},GCP_REGION=${REGION},GCS_BUCKET_NAME=${BUCKET_NAME},FAISS_INDEX_DIR=/tmp/vectorstore" \
+  --set-secrets="GOOGLE_API_KEY=google-api-key:latest" \
+  --command="python" \
+  --args="scripts/ingestar_documentos.py" \
+  --project="${PROJECT_ID}"
+```
+
+### Ejecutar el Job
+
+```bash
+# Ejecutar manualmente
+gcloud run jobs execute ingesta-rag-job \
+  --region="${REGION}" \
+  --project="${PROJECT_ID}"
+
+# Ver logs en tiempo real
+gcloud run jobs executions list \
+  --job=ingesta-rag-job \
+  --region="${REGION}" \
+  --project="${PROJECT_ID}"
+
+# Ver logs detallados de la última ejecución
+gcloud logging read "resource.type=cloud_run_job AND resource.labels.job_name=ingesta-rag-job" \
+  --limit=50 \
+  --project="${PROJECT_ID}"
+```
+
+### Parámetros explicados
+
+| Parámetro | Valor | Por qué |
+|---|---|---|
+| `--memory=2Gi` | 2 GB RAM | Holgura para 35 PDFs + embeddings + checkpoints |
+| `--cpu=2` | 2 vCPUs | La generación de embeddings es I/O-bound (API calls), no CPU-bound |
+| `--task-timeout=30m` | 30 minutos | Con reintentos y pausas, 35 PDFs pueden tomar 15-20 min |
+| `--max-retries=1` | 1 reintento | Si falla por un error transitorio, reintenta una vez |
+| `--command/--args` | `python scripts/ingestar_documentos.py` | Override del CMD del Dockerfile |
+| `FAISS_INDEX_DIR=/tmp/vectorstore` | Filesystem escribible | Cloud Run tiene `/tmp` escribible |
+
+### Actualizar el Cloud Run Service para leer de GCS
+
+Después de que el Job suba el índice FAISS a GCS, el Service necesita saber dónde descargarlo:
+
+```bash
+gcloud run services update agente-ia-backend \
+  --region="${REGION}" \
+  --update-env-vars="GCS_BUCKET_NAME=${BUCKET_NAME},FAISS_INDEX_DIR=/tmp/vectorstore" \
+  --project="${PROJECT_ID}"
+```
+
+### Flujo completo de la ingesta
+
+```
+1. Subir PDFs al bucket GCS (una vez)
+   ↓
+2. Ejecutar Cloud Run Job (ingesta-rag-job)
+   ├── Descarga PDFs de GCS → /tmp/corporativos/
+   ├── Fragmenta texto (chunks de 500 chars)
+   ├── Genera embeddings (Vertex AI text-embedding-004)
+   ├── Construye índice FAISS con checkpoints
+   └── Sube index.faiss + index.pkl a GCS
+   ↓
+3. Cloud Run Service (agente-ia-backend) — al recibir la primera consulta:
+   ├── Detecta que no hay índice local
+   ├── Descarga index.faiss + index.pkl de GCS → /tmp/vectorstore/
+   ├── Carga FAISS en memoria
+   └── Sirve búsquedas semánticas via API
+```
 
 ---
 
