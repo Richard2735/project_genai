@@ -2,8 +2,8 @@
 
 Solucion de IA generativa que responde preguntas en lenguaje natural sobre documentos corporativos usando Retrieval-Augmented Generation (RAG) y un agente orquestador con LangChain.
 
-**Frontend:** [https://project-genai.vercel.app/](https://project-genai.vercel.app/)
-**Backend API:** [https://agente-ia-backend-911975904529.us-central1.run.app/docs](https://agente-ia-backend-911975904529.us-central1.run.app/docs)
+**Frontend:** `https://project-genai.vercel.app/`
+**Backend API:** Desplegado en Google Cloud Run (URL asignada al desplegar)
 
 ---
 
@@ -238,10 +238,10 @@ gcloud run jobs execute ingesta-rag-job --region=us-central1
 
 ```bash
 # Health check
-curl https://agente-ia-backend-911975904529.us-central1.run.app/api/health
+curl https://YOUR_CLOUD_RUN_URL/api/health
 
 # Preguntar al agente
-curl -X POST https://agente-ia-backend-911975904529.us-central1.run.app/api/chat \
+curl -X POST https://YOUR_CLOUD_RUN_URL/api/chat \
   -H "Content-Type: application/json" \
   -d '{"message": "Cual es la politica de teletrabajo?", "session_id": "test"}'
 ```
@@ -284,3 +284,4 @@ Query usuario --> Embedding query --> FAISS search (Top-K) --> Chunks relevantes
 - [ARQUITECTURA.md](ARQUITECTURA.md) — Diagramas de arquitectura completos
 - [CLAUDE.md](CLAUDE.md) — Contexto del proyecto y decisiones de diseno
 - [docs/GCP_SERVICIOS_Y_PERMISOS.md](docs/GCP_SERVICIOS_Y_PERMISOS.md) — Guia completa de configuracion GCP
+- [docs/MEJORAS_ARQUITECTURA.md](docs/MEJORAS_ARQUITECTURA.md) — Roadmap v2.0 y mejoras propuestas

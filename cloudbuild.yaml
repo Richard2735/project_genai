@@ -4,7 +4,7 @@ steps:
     args:
       - 'build'
       - '-t'
-      - 'us-central1-docker.pkg.dev/project-d145b0df-76c9-4324-a6c/agente-ia-repo/backend'
+      - 'us-central1-docker.pkg.dev/${PROJECT_ID}/agente-ia-repo/backend'
       - '.'
 
   # --- Imagen 2: Job de ingesta (Document AI + embeddings) ---
@@ -14,12 +14,12 @@ steps:
       - '-f'
       - 'Dockerfile.job'
       - '-t'
-      - 'us-central1-docker.pkg.dev/project-d145b0df-76c9-4324-a6c/agente-ia-repo/ingesta-job'
+      - 'us-central1-docker.pkg.dev/${PROJECT_ID}/agente-ia-repo/ingesta-job'
       - '.'
 
 images:
-  - 'us-central1-docker.pkg.dev/project-d145b0df-76c9-4324-a6c/agente-ia-repo/backend'
-  - 'us-central1-docker.pkg.dev/project-d145b0df-76c9-4324-a6c/agente-ia-repo/ingesta-job'
+  - 'us-central1-docker.pkg.dev/${PROJECT_ID}/agente-ia-repo/backend'
+  - 'us-central1-docker.pkg.dev/${PROJECT_ID}/agente-ia-repo/ingesta-job'
 
 options:
   logging: CLOUD_LOGGING_ONLY

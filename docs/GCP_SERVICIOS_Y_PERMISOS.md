@@ -80,7 +80,7 @@ gcloud services enable \
 | Campo | Valor |
 |-------|-------|
 | **Nombre** | `drive-reader-agemt` |
-| **Email** | `drive-reader-agemt@project-d145b0df-76c9-4324-a6c.iam.gserviceaccount.com` |
+| **Email** | `drive-reader-agemt@YOUR_PROJECT_ID.iam.gserviceaccount.com` |
 | **Uso** | `python agent.py` en tu máquina |
 | **Auth** | JSON key (`credentials/service_account.json`) o ADC |
 
@@ -96,7 +96,7 @@ gcloud services enable \
 **Desde Cloud Shell / terminal:**
 
 ```bash
-SA_EMAIL=drive-reader-agemt@project-d145b0df-76c9-4324-a6c.iam.gserviceaccount.com
+SA_EMAIL=drive-reader-agemt@YOUR_PROJECT_ID.iam.gserviceaccount.com
 
 gcloud projects add-iam-policy-binding PROJECT_ID \
   --member="serviceAccount:$SA_EMAIL" \
@@ -125,7 +125,7 @@ gcloud projects add-iam-policy-binding PROJECT_ID \
 | Campo | Valor |
 |-------|-------|
 | **Nombre** | `cloudrun-agent-sa` |
-| **Email** | `cloudrun-agent-sa@project-d145b0df-76c9-4324-a6c.iam.gserviceaccount.com` |
+| **Email** | `cloudrun-agent-sa@YOUR_PROJECT_ID.iam.gserviceaccount.com` |
 | **Uso** | Backend desplegado en Cloud Run |
 | **Auth** | Workload Identity (automático, sin JSON) |
 
@@ -313,18 +313,18 @@ ls -la vectorstore/
 
 # Reconstruir imagen Docker con el vectorstore incluido
 gcloud builds submit \
-  --tag us-central1-docker.pkg.dev/project-d145b0df-76c9-4324-a6c/agente-ia-repo/backend \
-  --project=project-d145b0df-76c9-4324-a6c
+  --tag us-central1-docker.pkg.dev/YOUR_PROJECT_ID/agente-ia-repo/backend \
+  --project=YOUR_PROJECT_ID
 
 # Redesplegar Cloud Run con la nueva imagen
 gcloud run deploy agente-ia-backend \
-  --image=us-central1-docker.pkg.dev/project-d145b0df-76c9-4324-a6c/agente-ia-repo/backend \
-  --service-account=cloudrun-agent-sa@project-d145b0df-76c9-4324-a6c.iam.gserviceaccount.com \
+  --image=us-central1-docker.pkg.dev/YOUR_PROJECT_ID/agente-ia-repo/backend \
+  --service-account=cloudrun-agent-sa@YOUR_PROJECT_ID.iam.gserviceaccount.com \
   --region=us-central1 \
   --allow-unauthenticated \
   --set-secrets="GOOGLE_API_KEY=google-api-key:latest" \
-  --set-env-vars="USE_VERTEX_AI=true,GCP_PROJECT_ID=project-d145b0df-76c9-4324-a6c,GCP_REGION=us-central1,ALLOWED_ORIGINS=https://project-genai.vercel.app" \
-  --project=project-d145b0df-76c9-4324-a6c
+  --set-env-vars="USE_VERTEX_AI=true,GCP_PROJECT_ID=YOUR_PROJECT_ID,GCP_REGION=us-central1,ALLOWED_ORIGINS=https://project-genai.vercel.app" \
+  --project=YOUR_PROJECT_ID
 ```
 
 ### 2. Probar el agente localmente
@@ -370,7 +370,7 @@ CMD ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8080"]
 gcloud artifacts repositories create agente-ia-repo \
   --repository-format=docker \
   --location=us-central1 \
-  --project=project-d145b0df-76c9-4324-a6c
+  --project=YOUR_PROJECT_ID
 ```
 
 **Desde la consola GCP:**
@@ -399,8 +399,8 @@ Sube tu código a Cloud Build, ejecuta el Dockerfile y guarda la imagen en Artif
 cd project_genai/
 
 gcloud builds submit \
-  --tag us-central1-docker.pkg.dev/project-d145b0df-76c9-4324-a6c/agente-ia-repo/backend \
-  --project=project-d145b0df-76c9-4324-a6c
+  --tag us-central1-docker.pkg.dev/YOUR_PROJECT_ID/agente-ia-repo/backend \
+  --project=YOUR_PROJECT_ID
 ```
 
 **Qué hace este comando:**
@@ -408,7 +408,7 @@ gcloud builds submit \
 1. Empaqueta todo el directorio `project_genai/` (respetando `.dockerignore`)
 2. Lo sube a Cloud Build como un tarball
 3. Cloud Build ejecuta el `Dockerfile` paso a paso (instala Python, dependencias, copia código)
-4. La imagen resultante se publica en: `us-central1-docker.pkg.dev/project-d145b0df-76c9-4324-a6c/agente-ia-repo/backend`
+4. La imagen resultante se publica en: `us-central1-docker.pkg.dev/YOUR_PROJECT_ID/agente-ia-repo/backend`
 
 > El build tarda ~3-5 minutos. Puedes ver el progreso en **Cloud Build → History** en la consola GCP.
 
@@ -444,9 +444,9 @@ gcloud builds submit \
 > **Nota sobre Service Account en el Trigger:** Si ya tienes una SA con los roles `cloudbuild.builds.editor`, `artifactregistry.writer`, `logging.logWriter` y `storage.objectViewer`, puedes reutilizarla. Verifica sus roles con:
 
 ```bash
-gcloud projects get-iam-policy project-d145b0df-76c9-4324-a6c \
+gcloud projects get-iam-policy YOUR_PROJECT_ID \
   --flatten="bindings[].members" \
-  --filter="bindings.members:TU_SA@project-d145b0df-76c9-4324-a6c.iam.gserviceaccount.com" \
+  --filter="bindings.members:TU_SA@YOUR_PROJECT_ID.iam.gserviceaccount.com" \
   --format="table(bindings.role)"
 ```
 
@@ -460,11 +460,11 @@ steps:
     args:
       - 'build'
       - '-t'
-      - 'us-central1-docker.pkg.dev/project-d145b0df-76c9-4324-a6c/agente-ia-repo/backend'
+      - 'us-central1-docker.pkg.dev/YOUR_PROJECT_ID/agente-ia-repo/backend'
       - '.'
 
 images:
-  - 'us-central1-docker.pkg.dev/project-d145b0df-76c9-4324-a6c/agente-ia-repo/backend'
+  - 'us-central1-docker.pkg.dev/YOUR_PROJECT_ID/agente-ia-repo/backend'
 ```
 
 #### Activar el build manualmente (sin esperar un push)
@@ -477,7 +477,7 @@ images:
 
 ```bash
 gcloud artifacts docker images list \
-  us-central1-docker.pkg.dev/project-d145b0df-76c9-4324-a6c/agente-ia-repo
+  us-central1-docker.pkg.dev/YOUR_PROJECT_ID/agente-ia-repo
 ```
 
 #### 6b. Crear secreto en Secret Manager (Gobernanza de datos)
@@ -497,7 +497,7 @@ expuesta como texto plano en la configuración de Cloud Run.
 echo -n "TU_NUEVA_API_KEY" | gcloud secrets create google-api-key \
   --data-file=- \
   --replication-policy=automatic \
-  --project=project-d145b0df-76c9-4324-a6c
+  --project=YOUR_PROJECT_ID
 ```
 
 **Qué hace este comando:**
@@ -510,7 +510,7 @@ echo -n "TU_NUEVA_API_KEY" | gcloud secrets create google-api-key \
 **Verificar que el secreto se creó:**
 
 ```bash
-gcloud secrets list --project=project-d145b0df-76c9-4324-a6c
+gcloud secrets list --project=YOUR_PROJECT_ID
 ```
 
 **Desde la consola GCP:**
@@ -529,16 +529,16 @@ Para verificar:
 
 ```bash
 gcloud secrets get-iam-policy google-api-key \
-  --project=project-d145b0df-76c9-4324-a6c
+  --project=YOUR_PROJECT_ID
 ```
 
 Si el rol no aparece, agregarlo manualmente:
 
 ```bash
 gcloud secrets add-iam-policy-binding google-api-key \
-  --member="serviceAccount:cloudrun-agent-sa@project-d145b0df-76c9-4324-a6c.iam.gserviceaccount.com" \
+  --member="serviceAccount:cloudrun-agent-sa@YOUR_PROJECT_ID.iam.gserviceaccount.com" \
   --role="roles/secretmanager.secretAccessor" \
-  --project=project-d145b0df-76c9-4324-a6c
+  --project=YOUR_PROJECT_ID
 ```
 
 **Desde la consola GCP (verificar/agregar acceso):**
@@ -559,13 +559,13 @@ se despliega como servicio en Cloud Run.
 
 ```bash
 gcloud run deploy agente-ia-backend \
-  --image=us-central1-docker.pkg.dev/project-d145b0df-76c9-4324-a6c/agente-ia-repo/backend \
-  --service-account=cloudrun-agent-sa@project-d145b0df-76c9-4324-a6c.iam.gserviceaccount.com \
+  --image=us-central1-docker.pkg.dev/YOUR_PROJECT_ID/agente-ia-repo/backend \
+  --service-account=cloudrun-agent-sa@YOUR_PROJECT_ID.iam.gserviceaccount.com \
   --region=us-central1 \
   --allow-unauthenticated \
   --set-secrets="GOOGLE_API_KEY=google-api-key:latest" \
-  --set-env-vars="USE_VERTEX_AI=true,GCP_PROJECT_ID=project-d145b0df-76c9-4324-a6c,GCP_REGION=us-central1" \
-  --project=project-d145b0df-76c9-4324-a6c
+  --set-env-vars="USE_VERTEX_AI=true,GCP_PROJECT_ID=YOUR_PROJECT_ID,GCP_REGION=us-central1" \
+  --project=YOUR_PROJECT_ID
 ```
 
 **Qué hace cada flag:**
@@ -585,7 +585,7 @@ gcloud run deploy agente-ia-backend \
 |----------|--------|-------|---------|
 | `GOOGLE_API_KEY` | **Secret Manager** (`google-api-key:latest`) | Cifrado | API key para Gemini 2.5 Flash (LLM) |
 | `USE_VERTEX_AI` | Env var | `true` | Usar Vertex AI para embeddings (text-embedding-004) |
-| `GCP_PROJECT_ID` | Env var | `project-d145b0df-76c9-4324-a6c` | Proyecto GCP para Vertex AI |
+| `GCP_PROJECT_ID` | Env var | `YOUR_PROJECT_ID` | Proyecto GCP para Vertex AI |
 | `GCP_REGION` | Env var | `us-central1` | Región de Vertex AI |
 
 > **Nota:** El `.env` no se copia al contenedor (está en `.dockerignore`).
@@ -604,7 +604,7 @@ gcloud run deploy agente-ia-backend \
 7. En pestaña **"Variables & Secrets"**:
    - Click **"+ Add Variable"** (para env vars normales):
      - `USE_VERTEX_AI` = `true`
-     - `GCP_PROJECT_ID` = `project-d145b0df-76c9-4324-a6c`
+     - `GCP_PROJECT_ID` = `YOUR_PROJECT_ID`
      - `GCP_REGION` = `us-central1`
    - Click **"+ Reference a Secret"** (para la API key):
      - Name: `GOOGLE_API_KEY`
@@ -612,7 +612,7 @@ gcloud run deploy agente-ia-backend \
      - Version: `latest`
      - Reference method: **"Exposed as environment variable"**
 8. En pestaña **"Security"**:
-   - Service account: `cloudrun-agent-sa@project-d145b0df-76c9-4324-a6c.iam.gserviceaccount.com`
+   - Service account: `cloudrun-agent-sa@YOUR_PROJECT_ID.iam.gserviceaccount.com`
 9. Click **"Create"**
 
 #### Después del deploy
@@ -650,13 +650,13 @@ Si necesitas rotar la key (por ejemplo, si se expuso en un commit):
 # 3. Agregar nueva versión al secreto:
 echo -n "NUEVA_API_KEY" | gcloud secrets versions add google-api-key \
   --data-file=- \
-  --project=project-d145b0df-76c9-4324-a6c
+  --project=YOUR_PROJECT_ID
 
 # 4. Cloud Run usará la nueva versión automáticamente (usa "latest")
 #    Solo necesitas hacer un nuevo deploy o reiniciar las instancias:
 gcloud run services update agente-ia-backend \
   --region=us-central1 \
-  --project=project-d145b0df-76c9-4324-a6c
+  --project=YOUR_PROJECT_ID
 ```
 
 **Desde la consola GCP:**
@@ -702,10 +702,10 @@ gcloud run services update agente-ia-backend \
 
 | Servicio | URL |
 |----------|-----|
-| **Backend (Cloud Run)** | `https://agente-ia-backend-911975904529.us-central1.run.app` |
+| **Backend (Cloud Run)** | `https://agente-ia-backend-PROJECT_NUMBER.us-central1.run.app` |
 | **Frontend (Vercel)** | `https://project-genai.vercel.app/` |
-| **Health Check** | `https://agente-ia-backend-911975904529.us-central1.run.app/api/health` |
-| **Swagger UI** | `https://agente-ia-backend-911975904529.us-central1.run.app/docs` |
+| **Health Check** | `https://agente-ia-backend-PROJECT_NUMBER.us-central1.run.app/api/health` |
+| **Swagger UI** | `https://agente-ia-backend-PROJECT_NUMBER.us-central1.run.app/docs` |
 
 ---
 
@@ -830,7 +830,7 @@ Esto sigue el principio de **stateless containers**: los contenedores no guardan
 ### Crear el bucket y subir PDFs
 
 ```bash
-PROJECT_ID="project-d145b0df-76c9-4324-a6c"
+PROJECT_ID="YOUR_PROJECT_ID"
 REGION="us-central1"
 BUCKET_NAME="genai-docs-${PROJECT_ID}"
 
@@ -914,11 +914,11 @@ A diferencia de un **Cloud Run Service** (que escucha peticiones HTTP continuame
 ### Crear el Cloud Run Job
 
 ```bash
-PROJECT_ID="project-d145b0df-76c9-4324-a6c"
+PROJECT_ID="YOUR_PROJECT_ID"
 REGION="us-central1"
 BUCKET_NAME="genai-docs-${PROJECT_ID}"
 IMAGE="us-central1-docker.pkg.dev/${PROJECT_ID}/agente-ia-repo/ingesta-job"
-DOCAI_PROCESSOR_ID="ec4388cb0418ca92"
+DOCAI_PROCESSOR_ID="YOUR_PROCESSOR_ID"
 
 # Crear el Job (usa imagen dedicada: Dockerfile.job)
 gcloud run jobs create ingesta-rag-job \

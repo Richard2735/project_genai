@@ -321,9 +321,9 @@ project_genai/
 | Servicio | URL |
 |----------|-----|
 | **Frontend** | `https://project-genai.vercel.app/` |
-| **Backend API** | `https://agente-ia-backend-911975904529.us-central1.run.app` |
-| **Health Check** | `https://agente-ia-backend-911975904529.us-central1.run.app/api/health` |
-| **Swagger UI** | `https://agente-ia-backend-911975904529.us-central1.run.app/docs` |
+| **Backend API** | `https://YOUR_CLOUD_RUN_URL` |
+| **Health Check** | `https://YOUR_CLOUD_RUN_URL/api/health` |
+| **Swagger UI** | `https://YOUR_CLOUD_RUN_URL/docs` |
 
 ## 10. Ciclo de vida del AgentExecutor
 

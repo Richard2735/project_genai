@@ -345,7 +345,7 @@ Credenciales: carpeta `credentials/` (gitignored). Usar Service Account con perm
 | Frontend (Next.js) | ✅ Desplegado | `https://project-genai.vercel.app/` con chat, sesiones, sugerencias |
 | CORS | ✅ Configurado | `ALLOWED_ORIGINS` apunta a dominio Vercel |
 | Cloud Storage (GCS) | ✅ Implementado | Bucket para PDFs y vectorstore, helpers en `utils/gcs_helpers.py` |
-| Document AI | ✅ Configurado | Procesador OCR `ec4388cb0418ca92`, split automático >30 págs |
+| Document AI | ✅ Configurado | Procesador OCR `YOUR_PROCESSOR_ID`, split automático >30 págs |
 | Cloud Run Job (ingesta) | ✅ Completado | `ingesta-rag-job` — Document AI + Vertex AI nativo, 454 vectores |
 | Pipeline RAG (ingesta) | ✅ Completado | 35 PDFs procesados, índice FAISS en GCS, backend lo descarga auto |
 | HyDE | ⬜ Pendiente (Opcional) | Hypothetical Document Embeddings |
