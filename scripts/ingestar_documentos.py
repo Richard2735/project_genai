@@ -293,7 +293,7 @@ def main():
     total_pdfs = 0
     categorias = {}
     inicio = time.time()
-    CHECKPOINT_CADA = 3  # Guardar a disco cada N PDFs para liberar RAM
+    CHECKPOINT_CADA = 1  # Guardar a disco despues de CADA PDF para liberar RAM
 
     for idx, pdf in enumerate(pdfs, 1):
         # Saltar PDFs ya procesados (reanudacion desde checkpoint)
