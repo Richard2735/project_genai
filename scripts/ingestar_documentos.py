@@ -274,14 +274,28 @@ def main():
             # Generar embeddings y agregar al indice FAISS
             # Usamos add_documents (in-place) en vez de from_documents + merge
             # para evitar duplicar memoria con indices temporales
+            # Reintentos con backoff exponencial para manejar 429 RESOURCE_EXHAUSTED
             BATCH_SIZE = 5
+            MAX_RETRIES = 5
             for i in range(0, len(documentos), BATCH_SIZE):
                 lote = documentos[i:i + BATCH_SIZE]
-                if vectorstore is None:
-                    vectorstore = FAISS.from_documents(lote, embeddings)
+                for intento in range(MAX_RETRIES):
+                    try:
+                        if vectorstore is None:
+                            vectorstore = FAISS.from_documents(lote, embeddings)
+                        else:
+                            vectorstore.add_documents(lote)
+                        break  # Exito, salir del retry
+                    except Exception as e:
+                        if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
+                            espera = 2 ** (intento + 1)  # 2, 4, 8, 16, 32 segundos
+                            print(f"    Rate limit, reintentando en {espera}s... ({intento+1}/{MAX_RETRIES})")
+                            time.sleep(espera)
+                        else:
+                            raise  # Error diferente, propagar
                 else:
-                    vectorstore.add_documents(lote)
-                time.sleep(0.5)  # Respetar rate limits
+                    print(f"    WARN: No se pudo procesar lote tras {MAX_RETRIES} intentos")
+                time.sleep(2)  # Pausa entre lotes para respetar rate limits
 
             total_fragmentos += len(documentos)
             total_pdfs += 1
