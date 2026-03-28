@@ -235,25 +235,44 @@ def main():
         docs_dir = DOCS_DIR
         print("\n  Modo local: leyendo PDFs desde docs/corporativos/")
 
-    # 2. Inicializar embeddings con SDK nativo de Vertex AI (mucho mas liviano)
-    # Igual que en la prueba de concepto anterior (main.py) que SI funcionaba
-    import vertexai
-    from vertexai.language_models import TextEmbeddingModel
+    # 2. Inicializar embeddings
+    # Usamos el SDK mas liviano segun el modo:
+    #   USE_VERTEX_AI=true  → vertexai.language_models (SDK nativo, como main.py POC)
+    #   USE_VERTEX_AI=false → google.generativeai (SDK ligero, ~50MB)
     import numpy as np
     import faiss as faiss_lib
     from langchain_community.docstore.in_memory import InMemoryDocstore
 
-    print("\n  Inicializando modelo de embeddings (SDK nativo Vertex AI)...")
-    vertexai.init(project=GCP_PROJECT_ID, location=GCP_REGION)
-    embedding_model = TextEmbeddingModel.from_pretrained(EMBEDDING_MODEL)
+    if USE_VERTEX_AI:
+        import vertexai
+        from vertexai.language_models import TextEmbeddingModel
+        print("\n  Inicializando modelo de embeddings (SDK nativo Vertex AI)...")
+        vertexai.init(project=GCP_PROJECT_ID, location=GCP_REGION)
+        embedding_model = TextEmbeddingModel.from_pretrained("text-embedding-004")
+    else:
+        import google.generativeai as genai
+        print("\n  Inicializando modelo de embeddings (Google AI Studio - ligero)...")
+        genai.configure(api_key=GOOGLE_API_KEY)
+        embedding_model = None  # Usamos genai.embed_content directamente
 
     # Funcion auxiliar: generar embeddings con reintentos
     def generar_embeddings_batch(textos, max_retries=7):
-        """Genera embeddings usando SDK nativo con reintentos para rate limits."""
+        """Genera embeddings con reintentos para rate limits."""
         for intento in range(max_retries):
             try:
-                results = embedding_model.get_embeddings(textos)
-                return [r.values for r in results]
+                if USE_VERTEX_AI:
+                    results = embedding_model.get_embeddings(textos)
+                    return [r.values for r in results]
+                else:
+                    # SDK ligero: google.generativeai
+                    vectors = []
+                    for texto in textos:
+                        result = genai.embed_content(
+                            model="models/text-embedding-004",
+                            content=texto
+                        )
+                        vectors.append(result["embedding"])
+                    return vectors
             except Exception as e:
                 if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
                     espera = min(2 ** (intento + 1), 60)
@@ -264,19 +283,19 @@ def main():
         print(f"    WARN: No se pudo generar embeddings tras {max_retries} intentos")
         return None
 
-    # Funcion para crear LangChain embeddings (solo para cargar FAISS desde disco)
+    # Funcion para crear LangChain embeddings (solo para cargar/guardar FAISS)
     def crear_embeddings_langchain():
         if USE_VERTEX_AI:
             from langchain_google_vertexai import VertexAIEmbeddings
             return VertexAIEmbeddings(
-                model_name=EMBEDDING_MODEL,
+                model_name="text-embedding-004",
                 project=GCP_PROJECT_ID,
                 location=GCP_REGION,
             )
         else:
             from langchain_google_genai import GoogleGenerativeAIEmbeddings
             return GoogleGenerativeAIEmbeddings(
-                model=EMBEDDING_MODEL,
+                model="models/text-embedding-004",
                 google_api_key=GOOGLE_API_KEY,
             )
 
