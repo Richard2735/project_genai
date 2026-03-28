@@ -29,7 +29,7 @@ Este script implementa el pipeline completo de ingesta:
   corre 100% local, y se serializa a disco para persistencia.
 
 Uso:
-  cd s13/
+  cd project_genai/
   python scripts/ingestar_documentos.py
 
 Prerequisitos:
@@ -269,7 +269,7 @@ def main():
     total_pdfs = 0
     categorias = {}
     inicio = time.time()
-    CHECKPOINT_CADA = 5  # Guardar a disco cada N PDFs para liberar RAM
+    CHECKPOINT_CADA = 3  # Guardar a disco cada N PDFs para liberar RAM
 
     for idx, pdf in enumerate(pdfs, 1):
         try:
@@ -292,8 +292,8 @@ def main():
             # Usamos add_documents (in-place) en vez de from_documents + merge
             # para evitar duplicar memoria con indices temporales
             # Reintentos con backoff exponencial para manejar 429 RESOURCE_EXHAUSTED
-            BATCH_SIZE = 5
-            MAX_RETRIES = 5
+            BATCH_SIZE = 3
+            MAX_RETRIES = 7
             for i in range(0, len(documentos), BATCH_SIZE):
                 lote = documentos[i:i + BATCH_SIZE]
                 for intento in range(MAX_RETRIES):
@@ -305,14 +305,14 @@ def main():
                         break  # Exito, salir del retry
                     except Exception as e:
                         if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
-                            espera = 2 ** (intento + 1)  # 2, 4, 8, 16, 32 segundos
+                            espera = min(2 ** (intento + 1), 60)  # 2, 4, 8, 16, 32, 60, 60
                             print(f"    Rate limit, reintentando en {espera}s... ({intento+1}/{MAX_RETRIES})")
                             time.sleep(espera)
                         else:
                             raise  # Error diferente, propagar
                 else:
                     print(f"    WARN: No se pudo procesar lote tras {MAX_RETRIES} intentos")
-                time.sleep(2)  # Pausa entre lotes para respetar rate limits
+                time.sleep(5)  # Pausa de 5s entre lotes para respetar rate limits
 
             total_fragmentos += len(documentos)
             total_pdfs += 1
