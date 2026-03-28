@@ -234,21 +234,24 @@ def main():
         docs_dir = DOCS_DIR
         print("\n  Modo local: leyendo PDFs desde docs/corporativos/")
 
-    # 2. Inicializar modelo de embeddings (una sola vez)
+    # 2. Funcion para crear modelo de embeddings (se recrea en cada checkpoint)
+    def crear_embeddings():
+        if USE_VERTEX_AI:
+            from langchain_google_vertexai import VertexAIEmbeddings
+            return VertexAIEmbeddings(
+                model_name=EMBEDDING_MODEL,
+                project=GCP_PROJECT_ID,
+                location=GCP_REGION,
+            )
+        else:
+            from langchain_google_genai import GoogleGenerativeAIEmbeddings
+            return GoogleGenerativeAIEmbeddings(
+                model=EMBEDDING_MODEL,
+                google_api_key=GOOGLE_API_KEY,
+            )
+
     print("\n  Inicializando modelo de embeddings...")
-    if USE_VERTEX_AI:
-        from langchain_google_vertexai import VertexAIEmbeddings
-        embeddings = VertexAIEmbeddings(
-            model_name=EMBEDDING_MODEL,
-            project=GCP_PROJECT_ID,
-            location=GCP_REGION,
-        )
-    else:
-        from langchain_google_genai import GoogleGenerativeAIEmbeddings
-        embeddings = GoogleGenerativeAIEmbeddings(
-            model=EMBEDDING_MODEL,
-            google_api_key=GOOGLE_API_KEY,
-        )
+    embeddings = crear_embeddings()
 
     # 3. Buscar PDFs
     pdfs = sorted(docs_dir.rglob("*.pdf"))
@@ -257,14 +260,35 @@ def main():
         sys.exit(1)
     print(f"\n  Encontrados {len(pdfs)} PDFs")
 
+    # 3b. Intentar reanudar desde checkpoint previo en GCS
+    # Si el Job fue terminado (OOM) y reintentado, el checkpoint esta en GCS
+    vectorstore = None
+    pdfs_ya_procesados = set()
+
+    if GCS_BUCKET_NAME:
+        from utils.gcs_helpers import descargar_vectorstore_desde_gcs, subir_vectorstore_a_gcs
+        FAISS_INDEX_DIR.mkdir(parents=True, exist_ok=True)
+        faiss_file = FAISS_INDEX_DIR / "index.faiss"
+        if not faiss_file.exists():
+            print("\n  Buscando checkpoint previo en GCS...")
+            exito = descargar_vectorstore_desde_gcs(GCS_BUCKET_NAME, GCS_VECTORSTORE_PREFIX, FAISS_INDEX_DIR)
+            if exito:
+                vectorstore = FAISS.load_local(
+                    str(FAISS_INDEX_DIR), embeddings,
+                    allow_dangerous_deserialization=True
+                )
+                # Obtener nombres de PDFs ya indexados desde metadata
+                for doc_id in vectorstore.docstore._dict.values():
+                    if hasattr(doc_id, 'metadata') and 'fuente' in doc_id.metadata:
+                        pdfs_ya_procesados.add(doc_id.metadata['fuente'])
+                print(f"  Checkpoint recuperado: {vectorstore.index.ntotal} vectores, {len(pdfs_ya_procesados)} PDFs previos")
+                print(f"  PDFs ya procesados: {pdfs_ya_procesados}")
+
     # 4. Procesar PDF por PDF (bajo consumo de RAM)
-    # En vez de cargar todos los fragmentos en memoria y despues generar embeddings,
-    # procesamos cada PDF individualmente: fragmentar → embeddings → agregar al indice → liberar
     print("\n" + "=" * 65)
     print("  Procesando PDF por PDF (fragmentar + embeddings + FAISS)")
     print("=" * 65)
 
-    vectorstore = None
     total_fragmentos = 0
     total_pdfs = 0
     categorias = {}
@@ -272,6 +296,11 @@ def main():
     CHECKPOINT_CADA = 3  # Guardar a disco cada N PDFs para liberar RAM
 
     for idx, pdf in enumerate(pdfs, 1):
+        # Saltar PDFs ya procesados (reanudacion desde checkpoint)
+        if pdf.name in pdfs_ya_procesados:
+            print(f"  [{idx}/{len(pdfs)}] {pdf.name}: SKIP (ya procesado)")
+            continue
+
         try:
             # Fragmentar este PDF
             fragmentos = procesar_pdf(pdf)
@@ -289,9 +318,6 @@ def main():
                 categorias[cat] = categorias.get(cat, 0) + 1
 
             # Generar embeddings y agregar al indice FAISS
-            # Usamos add_documents (in-place) en vez de from_documents + merge
-            # para evitar duplicar memoria con indices temporales
-            # Reintentos con backoff exponencial para manejar 429 RESOURCE_EXHAUSTED
             BATCH_SIZE = 3
             MAX_RETRIES = 7
             for i in range(0, len(documentos), BATCH_SIZE):
@@ -305,14 +331,14 @@ def main():
                         break  # Exito, salir del retry
                     except Exception as e:
                         if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
-                            espera = min(2 ** (intento + 1), 60)  # 2, 4, 8, 16, 32, 60, 60
+                            espera = min(2 ** (intento + 1), 60)
                             print(f"    Rate limit, reintentando en {espera}s... ({intento+1}/{MAX_RETRIES})")
                             time.sleep(espera)
                         else:
-                            raise  # Error diferente, propagar
+                            raise
                 else:
                     print(f"    WARN: No se pudo procesar lote tras {MAX_RETRIES} intentos")
-                time.sleep(5)  # Pausa de 5s entre lotes para respetar rate limits
+                time.sleep(5)  # Pausa de 5s entre lotes
 
             total_fragmentos += len(documentos)
             total_pdfs += 1
@@ -322,16 +348,25 @@ def main():
             del documentos
             gc.collect()
 
-            # Checkpoint: guardar a disco cada N PDFs y recargar
-            # Esto fuerza a Python a liberar la memoria acumulada
+            # Checkpoint: guardar a disco + GCS, recrear embeddings
             if total_pdfs % CHECKPOINT_CADA == 0 and vectorstore is not None:
                 print(f"  ** Checkpoint: guardando indice parcial ({total_fragmentos} fragmentos)...")
                 FAISS_INDEX_DIR.mkdir(parents=True, exist_ok=True)
                 vectorstore.save_local(str(FAISS_INDEX_DIR))
-                del vectorstore
+
+                # Subir checkpoint a GCS (para reanudacion si hay OOM)
+                if GCS_BUCKET_NAME:
+                    subir_vectorstore_a_gcs(GCS_BUCKET_NAME, GCS_VECTORSTORE_PREFIX, FAISS_INDEX_DIR)
+
+                # Liberar TODO: vectorstore + embeddings (libera caches internas)
+                del vectorstore, embeddings
                 gc.collect()
-                time.sleep(1)
-                # Recargar desde disco (memoria limpia)
+                time.sleep(2)
+
+                # Recrear embeddings (objeto fresco, sin cache acumulada)
+                embeddings = crear_embeddings()
+
+                # Recargar vectorstore desde disco
                 vectorstore = FAISS.load_local(
                     str(FAISS_INDEX_DIR), embeddings,
                     allow_dangerous_deserialization=True
