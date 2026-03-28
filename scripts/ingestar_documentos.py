@@ -152,8 +152,8 @@ def extraer_texto_docai(client, processor_name, pdf_bytes):
     """
     Extrae texto de un PDF usando Document AI.
 
-    Si el PDF tiene mas de 30 paginas (limite de Document AI Free),
-    lo divide en partes de 30 paginas y procesa cada parte por separado.
+    Si el PDF tiene mas de 15 paginas (limite de Document AI OCR),
+    lo divide en partes de 15 paginas y procesa cada parte por separado.
 
     Args:
         client: Cliente DocumentProcessorServiceClient
@@ -166,7 +166,7 @@ def extraer_texto_docai(client, processor_name, pdf_bytes):
     from io import BytesIO
     from pypdf import PdfReader, PdfWriter
 
-    DOCAI_PAGE_LIMIT = 30
+    DOCAI_PAGE_LIMIT = 15
 
     # Verificar numero de paginas
     reader = PdfReader(BytesIO(pdf_bytes))
