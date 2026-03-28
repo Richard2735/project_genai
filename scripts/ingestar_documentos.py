@@ -37,6 +37,7 @@ Prerequisitos:
   - GOOGLE_API_KEY en .env (para generar embeddings con Gemini)
 """
 
+import gc
 import sys
 import time
 from pathlib import Path
@@ -59,7 +60,7 @@ from config.settings import (
     CHUNK_OVERLAP,
     imprimir_estado,
 )
-from tools.pdf_processor import procesar_directorio
+from tools.pdf_processor import procesar_pdf
 
 
 def crear_documentos_langchain(fragmentos: list[dict]) -> list[Document]:
@@ -199,11 +200,8 @@ def persistir_indice(vectorstore: FAISS, directorio: Path):
 def main():
     print("\n" + "=" * 65)
     print("  Pipeline de Ingesta RAG — Documentos Corporativos")
+    print("  (Modo optimizado: bajo consumo de RAM)")
     print("=" * 65)
-    print()
-    print("  Este script ejecuta el pipeline completo:")
-    print("  PDFs -> Texto -> Fragmentos -> Embeddings -> Indice FAISS")
-    print()
 
     # 1. Validar configuración
     estado = imprimir_estado()
@@ -219,72 +217,116 @@ def main():
             sys.exit(1)
         print("  Modo: Google AI Studio (API key gratuita)")
 
-    # 2. Procesar PDFs (extraer texto + fragmentar + keywords)
-    print("=" * 65)
-    print("  PASO 1: Extraccion y fragmentacion de PDFs")
-    print("=" * 65)
+    # 2. Inicializar modelo de embeddings (una sola vez)
+    print("\n  Inicializando modelo de embeddings...")
+    if USE_VERTEX_AI:
+        from langchain_google_vertexai import VertexAIEmbeddings
+        embeddings = VertexAIEmbeddings(
+            model_name=EMBEDDING_MODEL,
+            project=GCP_PROJECT_ID,
+            location=GCP_REGION,
+        )
+    else:
+        from langchain_google_genai import GoogleGenerativeAIEmbeddings
+        embeddings = GoogleGenerativeAIEmbeddings(
+            model=EMBEDDING_MODEL,
+            google_api_key=GOOGLE_API_KEY,
+        )
 
-    fragmentos = procesar_directorio(DOCS_DIR)
-    if not fragmentos:
-        print("ERROR: No hay fragmentos para indexar.")
-        print("       Ejecuta primero: python scripts/descargar_pdfs.py")
+    # 3. Buscar PDFs
+    pdfs = sorted(DOCS_DIR.rglob("*.pdf"))
+    if not pdfs:
+        print("ERROR: No hay PDFs en docs/corporativos/")
         sys.exit(1)
+    print(f"\n  Encontrados {len(pdfs)} PDFs")
 
-    # 3. Convertir a formato Document de LangChain
+    # 4. Procesar PDF por PDF (bajo consumo de RAM)
+    # En vez de cargar todos los fragmentos en memoria y despues generar embeddings,
+    # procesamos cada PDF individualmente: fragmentar → embeddings → agregar al indice → liberar
     print("\n" + "=" * 65)
-    print("  PASO 2: Conversion a Documents de LangChain")
+    print("  Procesando PDF por PDF (fragmentar + embeddings + FAISS)")
     print("=" * 65)
 
-    documentos = crear_documentos_langchain(fragmentos)
-    print(f"\n    {len(documentos)} documentos creados con metadata")
-
-    # Mostrar resumen de categorías
+    vectorstore = None
+    total_fragmentos = 0
+    total_pdfs = 0
     categorias = {}
-    for doc in documentos:
-        cat = doc.metadata["categoria"]
-        categorias[cat] = categorias.get(cat, 0) + 1
-    print("    Distribucion por categoria:")
-    for cat, count in sorted(categorias.items()):
-        print(f"      {cat}: {count} fragmentos")
+    inicio = time.time()
 
-    # 4. Generar embeddings y construir índice FAISS
-    print("\n" + "=" * 65)
-    print("  PASO 3: Generacion de embeddings + indice FAISS")
-    print("=" * 65)
+    for idx, pdf in enumerate(pdfs, 1):
+        try:
+            # Fragmentar este PDF
+            fragmentos = procesar_pdf(pdf)
+            if not fragmentos:
+                print(f"  [{idx}/{len(pdfs)}] {pdf.name}: 0 fragmentos (vacio)")
+                continue
 
-    vectorstore = generar_indice_faiss(documentos)
+            # Convertir a Documents de LangChain
+            documentos = crear_documentos_langchain(fragmentos)
+
+            # Contar por categoría
+            for doc in documentos:
+                cat = doc.metadata["categoria"]
+                categorias[cat] = categorias.get(cat, 0) + 1
+
+            # Generar embeddings y agregar al indice FAISS
+            # Procesamos en lotes de 10 para no saturar la API
+            BATCH_SIZE = 10
+            for i in range(0, len(documentos), BATCH_SIZE):
+                lote = documentos[i:i + BATCH_SIZE]
+                if vectorstore is None:
+                    vectorstore = FAISS.from_documents(lote, embeddings)
+                else:
+                    lote_vs = FAISS.from_documents(lote, embeddings)
+                    vectorstore.merge_from(lote_vs)
+                    del lote_vs
+                time.sleep(0.5)  # Respetar rate limits
+
+            total_fragmentos += len(documentos)
+            total_pdfs += 1
+            print(f"  [{idx}/{len(pdfs)}] {pdf.name}: {len(documentos)} fragmentos OK")
+
+            # Liberar memoria despues de cada PDF
+            del fragmentos, documentos
+            gc.collect()
+
+        except Exception as e:
+            print(f"  [{idx}/{len(pdfs)}] {pdf.name}: ERROR - {e}")
+
+    duracion = time.time() - inicio
+
+    if vectorstore is None:
+        print("ERROR: No se pudo generar el indice FAISS")
+        sys.exit(1)
 
     # 5. Persistir índice en disco
     print("\n" + "=" * 65)
-    print("  PASO 4: Persistencia del indice en disco")
+    print("  Guardando indice FAISS en disco")
     print("=" * 65)
-
     persistir_indice(vectorstore, FAISS_INDEX_DIR)
 
-    # 6. Prueba rápida de búsqueda
+    # 6. Prueba rápida
     print("\n" + "=" * 65)
-    print("  PASO 5: Prueba rapida de busqueda semantica")
+    print("  Prueba rapida de busqueda semantica")
     print("=" * 65)
-
     query_test = "politica de seguridad de la informacion"
     print(f"\n    Query: '{query_test}'")
     resultados = vectorstore.similarity_search_with_score(query_test, k=3)
-
     for i, (doc, score) in enumerate(resultados, 1):
         print(f"\n    [Resultado {i}] Score: {score:.4f}")
         print(f"    Fuente: {doc.metadata['fuente']}, pag. {doc.metadata['pagina']}")
         print(f"    Categoria: {doc.metadata['categoria']}")
         print(f"    Texto: {doc.page_content[:150]}...")
 
-    # Resumen final
+    # Resumen
     print("\n" + "=" * 65)
     print("  INGESTA COMPLETADA")
     print("=" * 65)
-    print(f"\n    PDFs procesados:     {len(set(f['fuente'] for f in fragmentos))}")
-    print(f"    Fragmentos totales:  {len(documentos)}")
+    print(f"    PDFs procesados:     {total_pdfs}")
+    print(f"    Fragmentos totales:  {total_fragmentos}")
+    print(f"    Categorias:          {dict(categorias)}")
+    print(f"    Tiempo total:        {duracion:.1f} segundos")
     print(f"    Indice FAISS:        {FAISS_INDEX_DIR}/")
-    print(f"\n    El agente ahora puede buscar semanticamente en estos documentos.")
-    print(f"    Ejecuta: python agent.py")
     print()
 
 
