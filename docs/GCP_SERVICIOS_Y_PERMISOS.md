@@ -16,7 +16,8 @@ gcloud services enable \
   dlp.googleapis.com \
   secretmanager.googleapis.com \
   iam.googleapis.com \
-  storage.googleapis.com
+  storage.googleapis.com \
+  documentai.googleapis.com
 ```
 
 #### Desde la consola GCP
@@ -37,6 +38,7 @@ gcloud services enable \
 | `secretmanager.googleapis.com` | Secret Manager | Almacenar API keys y credenciales |
 | `iam.googleapis.com` | IAM | Gestión de roles y service accounts |
 | `storage.googleapis.com` | Cloud Storage | Almacenamiento de PDFs e índice FAISS |
+| `documentai.googleapis.com` | Document AI | Extracción de texto de PDFs (OCR avanzado) |
 
 ---
 
@@ -134,6 +136,8 @@ gcloud projects add-iam-policy-binding PROJECT_ID \
 | Vertex AI User | `roles/aiplatform.user` | ✅ |
 | Cloud DLP User | `roles/dlp.user` | ✅ |
 | Secret Manager Secret Accessor | `roles/secretmanager.secretAccessor` | ✅ |
+| Storage Object Admin | `roles/storage.objectAdmin` | ✅ |
+| Document AI API User | `roles/documentai.apiUser` | ✅ |
 | Drive Viewer | *(compartir carpeta en Drive)* | ⬜ Pendiente |
 
 > ⚠️ No olvides compartir la carpeta de Drive con `cloudrun-agent-sa@...` (Viewer) cuando despliegues.
@@ -743,10 +747,12 @@ Trigger (build-agente-ia-repo)     →     Repositorio (agente-ia-repo)
 
 ```text
 agente-ia-repo/
-└── backend
-    ├── sha256:abc123...   ← versión 1 (primer build)
-    ├── sha256:def456...   ← versión 2 (segundo build)
-    └── latest             ← siempre apunta al más reciente
+├── backend                ← Cloud Run Service (FastAPI + agente)
+│   ├── sha256:abc123...
+│   └── latest
+└── ingesta-job            ← Cloud Run Job (Document AI + embeddings)
+    ├── sha256:def456...
+    └── latest
 ```
 
 - Cloud Build **escribe** aquí después de construir
@@ -911,9 +917,10 @@ A diferencia de un **Cloud Run Service** (que escucha peticiones HTTP continuame
 PROJECT_ID="project-d145b0df-76c9-4324-a6c"
 REGION="us-central1"
 BUCKET_NAME="genai-docs-${PROJECT_ID}"
-IMAGE="us-central1-docker.pkg.dev/${PROJECT_ID}/agente-ia-repo/agente-ia-backend"
+IMAGE="us-central1-docker.pkg.dev/${PROJECT_ID}/agente-ia-repo/ingesta-job"
+DOCAI_PROCESSOR_ID="ec4388cb0418ca92"
 
-# Crear el Job (usa la misma imagen Docker del backend)
+# Crear el Job (usa imagen dedicada: Dockerfile.job)
 gcloud run jobs create ingesta-rag-job \
   --image="${IMAGE}" \
   --region="${REGION}" \
@@ -922,12 +929,14 @@ gcloud run jobs create ingesta-rag-job \
   --cpu="2" \
   --task-timeout="30m" \
   --max-retries=1 \
-  --set-env-vars="USE_VERTEX_AI=true,GCP_PROJECT_ID=${PROJECT_ID},GCP_REGION=${REGION},GCS_BUCKET_NAME=${BUCKET_NAME},FAISS_INDEX_DIR=/tmp/vectorstore" \
+  --set-env-vars="GCP_PROJECT_ID=${PROJECT_ID},GCP_REGION=${REGION},GCS_BUCKET_NAME=${BUCKET_NAME},GCS_VECTORSTORE_PREFIX=vectorstore/,FAISS_INDEX_DIR=/tmp/vectorstore,DOCAI_PROCESSOR_ID=${DOCAI_PROCESSOR_ID},DOCAI_LOCATION=us" \
   --set-secrets="GOOGLE_API_KEY=google-api-key:latest" \
-  --command="python" \
-  --args="scripts/ingestar_documentos.py" \
   --project="${PROJECT_ID}"
 ```
+
+> **Nota:** El Job usa `Dockerfile.job` (imagen `ingesta-job`), NO la imagen del backend.
+> El script de ingesta usa Document AI para extraer texto y Vertex AI nativo para embeddings.
+> No importa `google-cloud-aiplatform` (evita OOM).
 
 ### Ejecutar el Job
 
@@ -976,11 +985,13 @@ gcloud run services update agente-ia-backend \
 ```
 1. Subir PDFs al bucket GCS (una vez)
    ↓
-2. Ejecutar Cloud Run Job (ingesta-rag-job)
-   ├── Descarga PDFs de GCS → /tmp/corporativos/
-   ├── Fragmenta texto (chunks de 500 chars)
-   ├── Genera embeddings (Vertex AI text-embedding-004)
-   ├── Construye índice FAISS con checkpoints
+2. Ejecutar Cloud Run Job (ingesta-rag-job) — imagen: ingesta-job (Dockerfile.job)
+   ├── Descarga PDFs de GCS
+   ├── Extrae texto con Document AI (OCR avanzado)
+   │   └── PDFs > 30 págs se dividen automáticamente (límite Document AI Free)
+   ├── Fragmenta texto (chunks de 500 chars, overlap 100)
+   ├── Genera embeddings (Vertex AI text-embedding-004, SDK nativo)
+   ├── Construye índice FAISS con checkpoints después de cada PDF
    └── Sube index.faiss + index.pkl a GCS
    ↓
 3. Cloud Run Service (agente-ia-backend) — al recibir la primera consulta:
@@ -1009,6 +1020,10 @@ gcloud run services update agente-ia-backend \
 | `service account info is missing 'email' field` | ADC expirado en Cloud Shell tras reinicio de sesión | Ejecutar `gcloud auth application-default login` antes de la ingesta |
 | `429 RESOURCE_EXHAUSTED` en embeddings | Vertex AI quota de `textembedding-gecko` por minuto agotada | Reintentos con backoff exponencial (2, 4, 8, 16, 32s) + pausa de 2s entre lotes |
 | `DeprecationWarning: VertexAIEmbeddings` | Clase deprecada en langchain 3.2.0 | Funcional pero migrar a `GoogleGenerativeAIEmbeddings` del paquete `langchain-google-genai` en el futuro |
+| OOM en Cloud Run Job (16 GB RAM) | `google-cloud-aiplatform` consume ~4-6 GB RAM al importarse | Imagen dedicada (`Dockerfile.job`) + script que NO importa el SDK pesado. Usar `vertexai.language_models.TextEmbeddingModel` (nativo, ligero) |
+| `PAGE_LIMIT_EXCEEDED` en Document AI | Document AI Free limita a 30 páginas por request | Dividir PDFs grandes en partes de 30 páginas con `pypdf` antes de enviar a Document AI |
+| `Disallowed unicode characters in object name` | Variable de entorno con salto de línea (`vecto\nrstore/`) al pegar comando multilinea en terminal | Verificar env vars del Job con `gcloud run jobs describe` antes de ejecutar |
+| `models/text-embedding-004 is not found` | `genai.embed_content()` no reconoce el modelo con prefijo `models/` | Usar Vertex AI nativo (`TextEmbeddingModel`) para consistencia con el backend |
 
 ---
 

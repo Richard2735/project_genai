@@ -28,24 +28,24 @@ El agente combina dos iniciativas internas de la consultora:
 - ✅ Uso de **LangChain** en Python
 - ✅ Al menos **1 agente** (ReAct pattern con AgentExecutor)
 - ✅ Al menos **2 herramientas propias** (tenemos 3: data_prep, rag_search, dlp_anonymizer)
-- ⬜ Implementación de **RAG sobre base vectorial** (FAISS/Chroma con embeddings reales)
-- ⬜ **Filtro de búsqueda por metadatos** (categoría, nombre de archivo, fecha)
+- ✅ Implementación de **RAG sobre base vectorial** (FAISS con embeddings reales via Vertex AI)
+- ✅ **Filtro de búsqueda por metadatos** (categoría, nombre de archivo, página)
 - ⬜ (Opcional) Uso de **HyDE** para enriquecer queries antes de la búsqueda vectorial
 - ✅ Documentos cargados con **metadata útil** (categoría, fuente, página)
 
 ### Backend
 
 - ✅ Agente con herramientas personalizadas
-- ⬜ Pipeline RAG completo usando LangChain (ingesta → embeddings → vector store → retrieval)
-- ⬜ Ingesta de documentos y vector store persistente
+- ✅ Pipeline RAG completo (Document AI → embeddings → FAISS → GCS → retrieval)
+- ✅ Ingesta de documentos y vector store persistente (FAISS en GCS)
 - ✅ API REST (FastAPI) para exponer el agente como microservicio (`api.py`)
-- ⬜ Desplegar en **Google Cloud Run**
+- ✅ Desplegar en **Google Cloud Run**
 
 ### Frontend
 
-- ⬜ Desarrollado en **Next.js** o React
-- ⬜ Desplegar en **Vercel**
-- ⬜ Interfaz mínima con:
+- ✅ Desarrollado en **Next.js** (TypeScript)
+- ✅ Desplegar en **Vercel**
+- ✅ Interfaz mínima con:
   - Caja de texto para ingresar preguntas
   - Respuesta del modelo
   - Historial simple de conversación
@@ -68,6 +68,7 @@ El agente combina dos iniciativas internas de la consultora:
 | **LLM (prod)** | Gemini via Vertex AI | Mismo modelo pero facturado con créditos GCP (sin rate limit) |
 | **Embeddings** | text-embedding-004 (Vertex AI) | Vectorización de documentos para RAG |
 | **Framework** | LangChain (`langchain_classic` 1.0.3) | Agente, tools, cadenas RAG, memoria |
+| **PDF Extraction** | Document AI (OCR Processor) | Extracción de texto de PDFs con OCR avanzado |
 | **Vector Store** | FAISS | Almacenamiento y búsqueda de embeddings |
 | **Object Storage** | Cloud Storage (GCS) | PDFs corporativos + índice FAISS persistido |
 | **Batch Processing** | Cloud Run Jobs | Ingesta masiva de documentos (2GB RAM, 30min) |
@@ -92,8 +93,10 @@ project_genai/
 ├── api.py                 ← ✅ FastAPI server (4 endpoints: chat, health, ingest, docs)
 ├── test_agent.py          ← Suite de pruebas unitarias
 ├── requirements.txt       ← Dependencias Python
-├── Dockerfile             ← ✅ Contenedor Docker para Cloud Run
-├── cloudbuild.yaml        ← ✅ Pipeline CI/CD para Cloud Build
+├── Dockerfile             ← ✅ Contenedor Docker para Cloud Run Service (backend)
+├── Dockerfile.job         ← ✅ Contenedor Docker para Cloud Run Job (ingesta)
+├── cloudbuild.yaml        ← ✅ Pipeline CI/CD — construye 2 imágenes (backend + ingesta-job)
+├── ARQUITECTURA.md        ← ✅ Diagrama de arquitectura completo
 ├── .env                   ← Variables de entorno (NO subir a git)
 ├── .env.example           ← Plantilla de variables de entorno
 ├── .gitignore             ← ✅ Seguridad: excluye .env, credentials, etc.
@@ -107,6 +110,7 @@ project_genai/
 │   └── drive_loader.py    ← Descarga PDFs desde Google Drive
 ├── scripts/
 │   ├── descargar_pdfs.py  ← Descarga PDFs desde Google Drive
+│   ├── colab_ingesta_rag.ipynb ← Notebook Colab alternativo para ingesta
 │   └── ingestar_documentos.py ← ✅ Pipeline de ingesta RAG (optimizado para bajo RAM)
 ├── utils/
 │   ├── __init__.py
@@ -203,14 +207,13 @@ project_genai/
 ### Flujo de ingesta
 
 ```
-Google Drive → PDFs → PyPDFLoader → TextSplitter → Embeddings → Vector Store (FAISS)
+GCS (PDFs) → Document AI (OCR) → TextSplitter → Embeddings (Vertex AI) → FAISS → GCS
                                         │
                                         ▼
                                    Metadata por chunk:
                                    • categoria (POLITICAS, PROCEDIMIENTOS, etc.)
-                                   • archivo_fuente
+                                   • fuente (nombre archivo)
                                    • pagina
-                                   • fecha_ingesta
 ```
 
 ### Flujo de consulta
@@ -334,16 +337,18 @@ Credenciales: carpeta `credentials/` (gitignored). Usar Service Account con perm
 | `AgentExecutor` | ✅ Funcional | Gemini 2.5 Flash (Vertex AI en prod, AI Studio en dev), memoria k=5 |
 | Google Drive loader | ✅ Funcional | Service Account + Drive API v3 |
 | Backend API (FastAPI) | ✅ Implementado | `api.py` — 4 endpoints, sesiones por `session_id`, CORS |
-| GCP SAs + Permisos | ✅ Configurado | 3 SAs con roles asignados (ver `docs/GCP_SERVICIOS_Y_PERMISOS.md`) |
+| GCP SAs + Permisos | ✅ Configurado | `cloudrun-agent-sa` con roles Vertex AI, DLP, Storage, Document AI, Secret Manager |
 | Secret Manager | ✅ Configurado | `google-api-key` almacenada, accesible por `cloudrun-agent-sa` |
-| Dockerfile | ✅ Implementado | Multi-layer, `.dockerignore` con seguridad |
-| Cloud Build | ✅ Configurado | Trigger `build-backend` + `cloudbuild.yaml` |
-| Despliegue Cloud Run | ✅ Desplegado | `agente-ia-backend` con Vertex AI, Secret Manager, SA dedicada |
+| Dockerfile | ✅ Implementado | Backend (FastAPI) — `Dockerfile` |
+| Dockerfile.job | ✅ Implementado | Ingesta (Document AI) — `Dockerfile.job` |
+| Cloud Build | ✅ Configurado | Trigger `build-agente-ia-repo` + `cloudbuild.yaml` (2 imágenes) |
+| Despliegue Cloud Run | ✅ Desplegado | `agente-ia-backend` con Vertex AI, Secret Manager, GCS |
 | Frontend (Next.js) | ✅ Desplegado | `https://project-genai.vercel.app/` con chat, sesiones, sugerencias |
 | CORS | ✅ Configurado | `ALLOWED_ORIGINS` apunta a dominio Vercel |
 | Cloud Storage (GCS) | ✅ Implementado | Bucket para PDFs y vectorstore, helpers en `utils/gcs_helpers.py` |
-| Cloud Run Job (ingesta) | ✅ Implementado | `ingesta-rag-job` — 2GB RAM, lee GCS, genera FAISS, sube a GCS |
-| Pipeline RAG (ingesta) | 🔄 En progreso | Script listo con GCS + reintentos, pendiente ejecución del Job |
+| Document AI | ✅ Configurado | Procesador OCR `ec4388cb0418ca92`, split automático >30 págs |
+| Cloud Run Job (ingesta) | ✅ Completado | `ingesta-rag-job` — Document AI + Vertex AI nativo, 454 vectores |
+| Pipeline RAG (ingesta) | ✅ Completado | 35 PDFs procesados, índice FAISS en GCS, backend lo descarga auto |
 | HyDE | ⬜ Pendiente (Opcional) | Hypothetical Document Embeddings |
 | README final | ⬜ Pendiente | Descripción, stack, instrucciones |
 
@@ -400,7 +405,7 @@ Ver comentarios `# En producción usar:` en cada tool. Requiere:
 | Al menos 2 herramientas propias | ✅ | 3 tools: data_prep, rag_search, dlp_anonymizer |
 | API REST (FastAPI) | ✅ | `api.py` — 4 endpoints, sesiones, CORS, Swagger |
 | GCP IAM configurado | ✅ | 3 SAs, roles, ADC, Secret Manager |
-| RAG sobre base vectorial | 🔄 | FAISS + text-embedding-004 (Vertex AI). Ingesta pendiente de ejecución completa |
+| RAG sobre base vectorial | ✅ | FAISS + text-embedding-004 (Vertex AI) + Document AI. 454 vectores, 35 PDFs |
 | Filtro por metadatos | ✅ | Metadata por chunk: categoria, fuente, pagina, keywords |
 | HyDE (opcional) | ⬜ | Pendiente: query → hipótesis → embedding |
 | Backend desplegado (Cloud Run) | ✅ | `agente-ia-backend` — Vertex AI + Secret Manager |
