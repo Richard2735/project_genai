@@ -110,7 +110,6 @@ project_genai/
 │   └── drive_loader.py    ← Descarga PDFs desde Google Drive
 ├── scripts/
 │   ├── descargar_pdfs.py  ← Descarga PDFs desde Google Drive
-│   ├── colab_ingesta_rag.ipynb ← Notebook Colab alternativo para ingesta
 │   └── ingestar_documentos.py ← ✅ Pipeline de ingesta RAG (optimizado para bajo RAM)
 ├── utils/
 │   ├── __init__.py
