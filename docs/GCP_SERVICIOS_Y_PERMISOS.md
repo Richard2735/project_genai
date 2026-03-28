@@ -258,14 +258,68 @@ set GOOGLE_APPLICATION_CREDENTIALS=credentials\service_account.json
 
 ## Próximos pasos (después de permisos)
 
-### 1. Ejecutar ingesta de documentos con Vertex AI
+### 1. Ejecutar ingesta de documentos con Vertex AI (desde Cloud Shell)
+
+**Prerequisitos:**
 
 ```bash
-# Asegurar GCP_PROJECT_ID en .env
+# 1. Autenticarse (obligatorio si la sesión se reinició)
+gcloud auth application-default login
+
+# 2. Asegurar que el .env tiene las variables correctas
+cat .env
+# Debe tener: USE_VERTEX_AI=true, GCP_PROJECT_ID=..., GCP_REGION=us-central1
+
+# 3. Verificar que los PDFs están en docs/corporativos/
+ls docs/corporativos/POLITICAS/ docs/corporativos/PROCEDIMIENTOS/ docs/corporativos/REGLAMENTOS/
+```
+
+**Ejecutar la ingesta:**
+
+```bash
 python scripts/ingestar_documentos.py
 ```
 
-Esto usará `text-embedding-004` de Vertex AI para generar embeddings.
+**¿Qué hace el script?**
+
+1. Lee cada PDF de `docs/corporativos/` (35 PDFs, ~820 páginas)
+2. Fragmenta el texto en chunks de ~500 caracteres con overlap de 100
+3. Genera embeddings con `text-embedding-004` via Vertex AI
+4. Almacena todo en un índice FAISS en `vectorstore/`
+
+**Optimizaciones implementadas (para Cloud Shell con ~1.7 GB RAM):**
+
+| Optimización | Por qué |
+|---|---|
+| Procesa 1 PDF a la vez | Evita cargar todos los fragmentos en memoria |
+| Batch size de 5 | Menos presión en RAM y API |
+| `gc.collect()` después de cada PDF | Fuerza liberación de memoria |
+| Checkpoint cada 5 PDFs | Guarda índice a disco, borra de RAM, recarga limpio |
+| Reintentos con backoff (2, 4, 8, 16, 32s) | Maneja error 429 RESOURCE_EXHAUSTED de Vertex AI |
+| Pausa de 2s entre lotes | Respeta rate limits de la API |
+
+**Después de la ingesta exitosa:**
+
+```bash
+# Verificar que el índice se creó
+ls -la vectorstore/
+# Debe contener: index.faiss, index.pkl
+
+# Reconstruir imagen Docker con el vectorstore incluido
+gcloud builds submit \
+  --tag us-central1-docker.pkg.dev/project-d145b0df-76c9-4324-a6c/agente-ia-repo/backend \
+  --project=project-d145b0df-76c9-4324-a6c
+
+# Redesplegar Cloud Run con la nueva imagen
+gcloud run deploy agente-ia-backend \
+  --image=us-central1-docker.pkg.dev/project-d145b0df-76c9-4324-a6c/agente-ia-repo/backend \
+  --service-account=cloudrun-agent-sa@project-d145b0df-76c9-4324-a6c.iam.gserviceaccount.com \
+  --region=us-central1 \
+  --allow-unauthenticated \
+  --set-secrets="GOOGLE_API_KEY=google-api-key:latest" \
+  --set-env-vars="USE_VERTEX_AI=true,GCP_PROJECT_ID=project-d145b0df-76c9-4324-a6c,GCP_REGION=us-central1,ALLOWED_ORIGINS=https://project-genai.vercel.app" \
+  --project=project-d145b0df-76c9-4324-a6c
+```
 
 ### 2. Probar el agente localmente
 
@@ -273,7 +327,7 @@ Esto usará `text-embedding-004` de Vertex AI para generar embeddings.
 python agent.py
 ```
 
-Ahora usa `ChatGoogleGenerativeAI` con API key (model: `gemini-2.5-flash`).
+Usa `ChatVertexAI` (Vertex AI) o `ChatGoogleGenerativeAI` (AI Studio) según `USE_VERTEX_AI` en `.env`.
 
 > **Nota importante:** La cuenta de usuario (`richard.diaz.nahui@gmail.com`) también necesita
 > el rol **Vertex AI User** en IAM si se usa Vertex AI para embeddings.
@@ -613,12 +667,39 @@ gcloud run services update agente-ia-backend \
 
 ---
 
-### 7. Frontend (Next.js → Vercel)
+### 7. Frontend (Next.js → Vercel) — ✅ COMPLETADO
 
-- Crear app Next.js con interfaz de chat
-- Conectar al endpoint de Cloud Run (`https://agente-ia-backend-XXXXXXXX-uc.a.run.app`)
-- Desplegar en Vercel
-- Configurar variable de entorno `NEXT_PUBLIC_API_URL` con la URL de Cloud Run
+| Campo | Valor |
+|-------|-------|
+| **Framework** | Next.js (TypeScript) |
+| **URL producción** | `https://project-genai.vercel.app/` |
+| **Repo** | Mismo repo GitHub, Root Directory: `frontend` |
+| **Variable de entorno** | `NEXT_PUBLIC_API_URL` → URL de Cloud Run |
+
+**Configuración en Vercel:**
+
+1. Importar proyecto desde GitHub
+2. **Root Directory**: `frontend` (importante, si no da 404)
+3. **Environment Variables**: `NEXT_PUBLIC_API_URL` = URL de Cloud Run
+4. Deploy automático al hacer push a `main`
+
+**Funcionalidades del frontend:**
+
+- Chat con el agente (sesiones por `session_id`)
+- Sugerencias de preguntas predefinidas
+- Historial de conversación
+- Auto-scroll, Enter para enviar, Shift+Enter para nueva línea
+- Soporte dark mode
+- Botón de nueva conversación
+
+### 8. URLs de producción
+
+| Servicio | URL |
+|----------|-----|
+| **Backend (Cloud Run)** | `https://agente-ia-backend-911975904529.us-central1.run.app` |
+| **Frontend (Vercel)** | `https://project-genai.vercel.app/` |
+| **Health Check** | `https://agente-ia-backend-911975904529.us-central1.run.app/api/health` |
+| **Swagger UI** | `https://agente-ia-backend-911975904529.us-central1.run.app/docs` |
 
 ---
 
@@ -738,6 +819,10 @@ origin main               │
 | API key expuesta en GitHub | Key hardcodeada en archivo versionado (commit) | Usar `<TU_API_KEY>` en docs. Almacenar keys reales en Secret Manager o `.env` (gitignored). Si se expone: rotar inmediatamente, limpiar historial con `git filter-repo`, y force push |
 | `Failed to trigger build: if 'build.service_account' is specified...` | Al usar SA personalizada en el trigger, Cloud Build exige configurar dónde guardar logs | Agregar `options: logging: CLOUD_LOGGING_ONLY` en `cloudbuild.yaml` |
 | `fatal: pathspec 'project_genai/cloudbuild.yaml' did not match any files` | El repo git tiene raíz en `project_genai/`, no en el directorio padre | Usar rutas relativas a la raíz del repo: `git add cloudbuild.yaml` (sin prefijo `project_genai/`) |
+| `Killed` durante ingesta en Cloud Shell | Cloud Shell tiene ~1.7 GB RAM. Cargar todos los PDFs + embeddings en memoria agota la RAM | Procesar PDF por PDF con `gc.collect()`, guardar checkpoints a disco cada 5 PDFs, batch size de 5 |
+| `service account info is missing 'email' field` | ADC expirado en Cloud Shell tras reinicio de sesión | Ejecutar `gcloud auth application-default login` antes de la ingesta |
+| `429 RESOURCE_EXHAUSTED` en embeddings | Vertex AI quota de `textembedding-gecko` por minuto agotada | Reintentos con backoff exponencial (2, 4, 8, 16, 32s) + pausa de 2s entre lotes |
+| `DeprecationWarning: VertexAIEmbeddings` | Clase deprecada en langchain 3.2.0 | Funcional pero migrar a `GoogleGenerativeAIEmbeddings` del paquete `langchain-google-genai` en el futuro |
 
 ---
 

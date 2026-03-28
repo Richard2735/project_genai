@@ -73,51 +73,59 @@ El agente combina dos iniciativas internas de la consultora:
 | **Frontend** | Next.js / React | Interfaz de consulta web |
 | **Documentos** | Google Drive API v3 + Service Account | Descarga automática de PDFs corporativos |
 | **Anonimización** | Cloud DLP API / regex local | Enmascaramiento de PII |
+| **Seguridad** | Secret Manager + `.gitignore` + `.dockerignore` | Gobernanza de datos y credenciales |
+| **CI/CD** | Cloud Build + Artifact Registry | Build automático de imágenes Docker |
 | **Despliegue backend** | Google Cloud Run | Backend como contenedor Docker |
 | **Despliegue frontend** | Vercel | Frontend web |
 | **Lenguaje** | Python 3.x (backend), TypeScript (frontend) |
-| **Entorno** | `.env` + `python-dotenv` | Variables de entorno |
+| **Entorno** | `.env` + `python-dotenv` + Secret Manager (prod) | Variables de entorno |
 
 ---
 
 ## Estructura del proyecto
 
 ```
-s13/
+project_genai/
 ├── agent.py               ← Punto de entrada principal (python agent.py)
 ├── api.py                 ← ✅ FastAPI server (4 endpoints: chat, health, ingest, docs)
 ├── test_agent.py          ← Suite de pruebas unitarias
 ├── requirements.txt       ← Dependencias Python
-├── Dockerfile             ← [PENDIENTE] Para despliegue en Cloud Run
+├── Dockerfile             ← ✅ Contenedor Docker para Cloud Run
+├── cloudbuild.yaml        ← ✅ Pipeline CI/CD para Cloud Build
 ├── .env                   ← Variables de entorno (NO subir a git)
 ├── .env.example           ← Plantilla de variables de entorno
+├── .gitignore             ← ✅ Seguridad: excluye .env, credentials, etc.
+├── .dockerignore          ← ✅ Seguridad: excluye secretos del contenedor
 ├── tools/
 │   ├── __init__.py
 │   ├── data_prep.py       ← Tool 1: limpieza y conversión a JSONL
 │   ├── rag_search.py      ← Tool 2: búsqueda semántica vectorial + RAG
 │   ├── dlp_anonymizer.py  ← Tool 3: anonimización de PII
+│   ├── pdf_processor.py   ← Extracción y fragmentación de PDFs
 │   └── drive_loader.py    ← Descarga PDFs desde Google Drive
-├── scripts/               ← Scripts auxiliares (descarga, ingesta, etc.)
-├── config/                ← Configuraciones
+├── scripts/
+│   ├── descargar_pdfs.py  ← Descarga PDFs desde Google Drive
+│   └── ingestar_documentos.py ← ✅ Pipeline de ingesta RAG (optimizado para bajo RAM)
+├── config/
+│   └── settings.py        ← Configuración centralizada del proyecto
 ├── credentials/           ← Service Account JSON (gitignored)
+├── vectorstore/           ← Índice FAISS persistido (gitignored, se genera con ingesta)
 ├── docs/
-│   ├── corporativos/      ← PDFs descargados y clasificados
-│   ├── GUIA_COMPLETA.md
-│   └── README.md
-├── frontend/              ← [PENDIENTE] Next.js app (Vercel)
+│   ├── corporativos/      ← PDFs descargados y clasificados (POLITICAS/, PROCEDIMIENTOS/, REGLAMENTOS/)
+│   └── GCP_SERVICIOS_Y_PERMISOS.md ← Guía completa de configuración GCP
+├── frontend/              ← ✅ Next.js app (desplegado en Vercel)
 │   ├── package.json
-│   ├── src/
-│   └── ...
+│   ├── app/
+│   │   ├── layout.tsx
+│   │   ├── page.tsx
+│   │   └── components/
+│   │       └── chat.tsx   ← Componente de chat con sesiones y sugerencias
+│   └── .env.local         ← NEXT_PUBLIC_API_URL (gitignored)
 ├── interface/             ← Interfaz local Streamlit (desarrollo)
 │   └── app.py
 └── .agent/
-    ├── commands/test.md   ← Slash command /project:test
-    └── skills/            ← Skills auto-invocados
-        ├── architecture/
-        ├── data-engineer/
-        ├── gcp-deployer/
-        ├── drive-loader/
-        └── rag-search/
+    ├── commands/test.md
+    └── skills/
 ```
 
 ---
@@ -283,18 +291,20 @@ Credenciales: carpeta `credentials/` (gitignored). Usar Service Account con perm
 | Componente | Estado | Notas |
 |---|---|---|
 | `data_prep_tool` | ✅ Implementado | Lógica regex local |
-| `rag_search_tool` | ✅ Implementado (mock) | Pendiente: migrar a FAISS + embeddings reales |
+| `rag_search_tool` | ✅ Implementado | Conectado a FAISS + embeddings reales via Vertex AI |
 | `dlp_anonymizer_tool` | ✅ Implementado | Regex local |
-| `AgentExecutor` | ✅ Funcional | Gemini 2.5 Flash, memoria k=5, `langchain_classic` |
+| `AgentExecutor` | ✅ Funcional | Gemini 2.5 Flash (Vertex AI en prod, AI Studio en dev), memoria k=5 |
 | Google Drive loader | ✅ Funcional | Service Account + Drive API v3 |
-| Backend API (FastAPI) | ✅ Implementado | `api.py` — 4 endpoints, sesiones por `session_id` |
-| GCP SAs + Permisos | ✅ Configurado | 3 SAs con roles asignados |
-| ADC autenticación | ✅ Configurado | `gcloud auth application-default login` |
-| Pipeline RAG real | ⬜ Pendiente | FAISS + Vertex AI Embeddings + metadata filters |
+| Backend API (FastAPI) | ✅ Implementado | `api.py` — 4 endpoints, sesiones por `session_id`, CORS |
+| GCP SAs + Permisos | ✅ Configurado | 3 SAs con roles asignados (ver `docs/GCP_SERVICIOS_Y_PERMISOS.md`) |
+| Secret Manager | ✅ Configurado | `google-api-key` almacenada, accesible por `cloudrun-agent-sa` |
+| Dockerfile | ✅ Implementado | Multi-layer, `.dockerignore` con seguridad |
+| Cloud Build | ✅ Configurado | Trigger `build-backend` + `cloudbuild.yaml` |
+| Despliegue Cloud Run | ✅ Desplegado | `agente-ia-backend` con Vertex AI, Secret Manager, SA dedicada |
+| Frontend (Next.js) | ✅ Desplegado | `https://project-genai.vercel.app/` con chat, sesiones, sugerencias |
+| CORS | ✅ Configurado | `ALLOWED_ORIGINS` apunta a dominio Vercel |
+| Pipeline RAG (ingesta) | 🔄 En progreso | Script optimizado (bajo RAM, reintentos), pendiente ejecución completa en Cloud Shell |
 | HyDE | ⬜ Pendiente (Opcional) | Hypothetical Document Embeddings |
-| Dockerfile | ⬜ Pendiente | Contenedorizar para Cloud Run |
-| Despliegue Cloud Run | ⬜ Pendiente | Docker → Cloud Run |
-| Frontend (Next.js) | ⬜ Pendiente | `frontend/` → Vercel |
 | README final | ⬜ Pendiente | Descripción, stack, instrucciones |
 
 ---
@@ -349,10 +359,11 @@ Ver comentarios `# En producción usar:` en cada tool. Requiere:
 | Al menos 1 agente | ✅ | AgentExecutor con tools y memoria |
 | Al menos 2 herramientas propias | ✅ | 3 tools: data_prep, rag_search, dlp_anonymizer |
 | API REST (FastAPI) | ✅ | `api.py` — 4 endpoints, sesiones, CORS, Swagger |
-| GCP IAM configurado | ✅ | 3 SAs, roles, ADC local |
-| RAG sobre base vectorial | ⬜ | Pendiente: FAISS + embeddings |
-| Filtro por metadatos | ⬜ | Pendiente: categoria, archivo, página |
+| GCP IAM configurado | ✅ | 3 SAs, roles, ADC, Secret Manager |
+| RAG sobre base vectorial | 🔄 | FAISS + text-embedding-004 (Vertex AI). Ingesta pendiente de ejecución completa |
+| Filtro por metadatos | ✅ | Metadata por chunk: categoria, fuente, pagina, keywords |
 | HyDE (opcional) | ⬜ | Pendiente: query → hipótesis → embedding |
-| Backend desplegado (Cloud Run) | ⬜ | Pendiente: Dockerfile + deploy |
-| Frontend desplegado (Vercel) | ⬜ | Pendiente: Next.js |
+| Backend desplegado (Cloud Run) | ✅ | `agente-ia-backend` — Vertex AI + Secret Manager |
+| Frontend desplegado (Vercel) | ✅ | `https://project-genai.vercel.app/` — Next.js con chat |
+| Seguridad y gobernanza | ✅ | Secret Manager, `.gitignore`, `.dockerignore`, git filter-repo |
 | README completo | ⬜ | Pendiente |
