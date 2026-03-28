@@ -25,6 +25,12 @@ google-auth-httplib2>=0.2.0
 # Google Cloud Platform — Vertex AI
 google-cloud-aiplatform>=1.60.0
 
+# Google Cloud — Document AI (extracción de texto de PDFs con OCR)
+google-cloud-documentai>=2.20.0
+
+# Google AI Studio — Embeddings ligeros (alternativa a Vertex AI SDK)
+google-generativeai>=0.8.0
+
 # Google Cloud Storage — PDFs y vectorstore en GCS
 google-cloud-storage>=2.14.0
 

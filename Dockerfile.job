@@ -1,0 +1,47 @@
+# ============================================================
+# Dockerfile.job — Cloud Run Job para ingesta RAG
+# ============================================================
+#
+# Imagen dedicada para el Job de ingesta de documentos.
+# Usa el mismo requirements.txt que el backend, pero con un
+# entrypoint diferente: ejecuta el script de ingesta en vez
+# de levantar FastAPI.
+#
+# El script de ingesta (ingestar_documentos.py) esta diseñado
+# para NO importar google-cloud-aiplatform aunque este instalado.
+# Solo usa: Document AI, google.generativeai, GCS, FAISS.
+#
+# Flujo:
+#   Dockerfile.job → (Cloud Build) → Imagen → Cloud Run Job
+#   Job: GCS(PDFs) → Document AI → Embeddings → FAISS → GCS
+#
+# ============================================================
+
+# --- Imagen base ---
+FROM python:3.12-slim
+
+# --- Variables de entorno para Python ---
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+# --- Directorio de trabajo ---
+WORKDIR /app
+
+# --- Dependencias del sistema ---
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    swig \
+    && rm -rf /var/lib/apt/lists/*
+
+# --- Dependencias Python (mismo requirements.txt) ---
+COPY requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# --- Codigo de la aplicacion ---
+COPY . .
+
+# --- Entrypoint: ejecutar el pipeline de ingesta ---
+# A diferencia del Dockerfile del backend (que arranca uvicorn/FastAPI),
+# este ejecuta el script de ingesta y termina.
+CMD ["python", "scripts/ingestar_documentos.py"]
