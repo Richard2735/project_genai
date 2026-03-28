@@ -252,6 +252,7 @@ def main():
     total_pdfs = 0
     categorias = {}
     inicio = time.time()
+    CHECKPOINT_CADA = 5  # Guardar a disco cada N PDFs para liberar RAM
 
     for idx, pdf in enumerate(pdfs, 1):
         try:
@@ -263,6 +264,7 @@ def main():
 
             # Convertir a Documents de LangChain
             documentos = crear_documentos_langchain(fragmentos)
+            del fragmentos  # Liberar fragmentos crudos inmediatamente
 
             # Contar por categoría
             for doc in documentos:
@@ -270,25 +272,40 @@ def main():
                 categorias[cat] = categorias.get(cat, 0) + 1
 
             # Generar embeddings y agregar al indice FAISS
-            # Procesamos en lotes de 10 para no saturar la API
-            BATCH_SIZE = 10
+            # Usamos add_documents (in-place) en vez de from_documents + merge
+            # para evitar duplicar memoria con indices temporales
+            BATCH_SIZE = 5
             for i in range(0, len(documentos), BATCH_SIZE):
                 lote = documentos[i:i + BATCH_SIZE]
                 if vectorstore is None:
                     vectorstore = FAISS.from_documents(lote, embeddings)
                 else:
-                    lote_vs = FAISS.from_documents(lote, embeddings)
-                    vectorstore.merge_from(lote_vs)
-                    del lote_vs
+                    vectorstore.add_documents(lote)
                 time.sleep(0.5)  # Respetar rate limits
 
             total_fragmentos += len(documentos)
             total_pdfs += 1
             print(f"  [{idx}/{len(pdfs)}] {pdf.name}: {len(documentos)} fragmentos OK")
 
-            # Liberar memoria despues de cada PDF
-            del fragmentos, documentos
+            # Liberar memoria
+            del documentos
             gc.collect()
+
+            # Checkpoint: guardar a disco cada N PDFs y recargar
+            # Esto fuerza a Python a liberar la memoria acumulada
+            if total_pdfs % CHECKPOINT_CADA == 0 and vectorstore is not None:
+                print(f"  ** Checkpoint: guardando indice parcial ({total_fragmentos} fragmentos)...")
+                FAISS_INDEX_DIR.mkdir(parents=True, exist_ok=True)
+                vectorstore.save_local(str(FAISS_INDEX_DIR))
+                del vectorstore
+                gc.collect()
+                time.sleep(1)
+                # Recargar desde disco (memoria limpia)
+                vectorstore = FAISS.load_local(
+                    str(FAISS_INDEX_DIR), embeddings,
+                    allow_dangerous_deserialization=True
+                )
+                print(f"  ** Checkpoint OK, continuando...")
 
         except Exception as e:
             print(f"  [{idx}/{len(pdfs)}] {pdf.name}: ERROR - {e}")
@@ -299,16 +316,22 @@ def main():
         print("ERROR: No se pudo generar el indice FAISS")
         sys.exit(1)
 
-    # 5. Persistir índice en disco
+    # 5. Persistir índice final en disco
     print("\n" + "=" * 65)
     print("  Guardando indice FAISS en disco")
     print("=" * 65)
     persistir_indice(vectorstore, FAISS_INDEX_DIR)
 
-    # 6. Prueba rápida
+    # 6. Prueba rápida (recargar desde disco para liberar RAM del vectorstore grande)
     print("\n" + "=" * 65)
     print("  Prueba rapida de busqueda semantica")
     print("=" * 65)
+    del vectorstore
+    gc.collect()
+    vectorstore = FAISS.load_local(
+        str(FAISS_INDEX_DIR), embeddings,
+        allow_dangerous_deserialization=True
+    )
     query_test = "politica de seguridad de la informacion"
     print(f"\n    Query: '{query_test}'")
     resultados = vectorstore.similarity_search_with_score(query_test, k=3)
