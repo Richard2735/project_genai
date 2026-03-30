@@ -60,6 +60,7 @@ docs/corporativos/REGLAMENTOS/
 docs/corporativos/OTROS/
 docs/GCP_SERVICIOS_Y_PERMISOS.md
 docs/GUIA_COMPLETA.md
+docs/PRESENTACION.md
 # ================================
 # Datos procesados (se regeneran)
 # ================================
@@ -122,3 +123,16 @@ docker-compose.override.yml
 *.backup
 *.orig
 *.rej
+# ========================================================
+# Informacion no necesaria para el proyecto (se regeneran)
+# ========================================================
+CHECKLIST_ENTREGA.md
+CLAUDE.md
+EJEMPLOS_PRACTICOS.md
+INDICE.md
+test_agent.py
+response.md
+START_HERE.txt
+
+# Skills
+*.agent
