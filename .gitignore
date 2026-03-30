@@ -124,7 +124,7 @@ docker-compose.override.yml
 *.orig
 *.rej
 # ========================================================
-# Informacion no necesaria para el proyecto (se regeneran)
+# Informacion no necesaria para el proyecto
 # ========================================================
 CHECKLIST_ENTREGA.md
 CLAUDE.md
