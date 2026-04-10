@@ -260,7 +260,7 @@ python test_agent.py
 |---|------|---------|----------------|
 | 1 | `data_prep_tool` | Limpia texto crudo (HTML, caracteres especiales) y lo convierte a JSONL | "Limpia este HTML y conviertelo a formato de entrenamiento" |
 | 2 | `rag_search_tool` | Busca fragmentos relevantes en documentos corporativos usando similitud semantica | "Cual es la politica de seguridad?" |
-| 3 | `dlp_anonymizer_tool` | Detecta y enmascara PII (emails, telefonos, DNI, tarjetas) | "Anonimiza: juan@email.com tiene DNI 12345678" |
+| 3 | `dlp_anonymizer_tool` | Detecta y enmascara PII (emails, telefonos, DNI, tarjetas) | "Anonimiza: <juan@email.com> tiene DNI 12345678" |
 
 ---
 
@@ -282,6 +282,4 @@ Query usuario --> Embedding query --> FAISS search (Top-K) --> Chunks relevantes
 ## Documentacion Adicional
 
 - [ARQUITECTURA.md](ARQUITECTURA.md) — Diagramas de arquitectura completos
-- [CLAUDE.md](CLAUDE.md) — Contexto del proyecto y decisiones de diseno
-- [docs/GCP_SERVICIOS_Y_PERMISOS.md](docs/GCP_SERVICIOS_Y_PERMISOS.md) — Guia completa de configuracion GCP
 - [docs/MEJORAS_ARQUITECTURA.md](docs/MEJORAS_ARQUITECTURA.md) — Roadmap v2.0 y mejoras propuestas
